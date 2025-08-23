@@ -376,4 +376,30 @@ helpers do
   def format_hour(hour)
     return "#{hour}:00" # Use 24-hour format for Russian locale
   end
+
+  def event_is_past?(event, current_date, current_time)
+    """Check if an event is in the past"""
+    begin
+      if event['all_day']
+        # For all-day events, check if the event date is before today
+        if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
+          event_date = event['start'].to_date
+        else
+          event_date = event['start']
+        end
+        return event_date < current_date
+      else
+        # For timed events, check if the event end time is before current time
+        if event['end'].is_a?(Icalendar::Values::DateTime) || event['end'].is_a?(Time)
+          event_end_time = event['end']
+          # Compare with current time
+          return event_end_time < current_time
+        end
+      end
+    rescue => e
+      logger.warn("Error checking if event is past: #{e}")
+      return false
+    end
+    false
+  end
 end
