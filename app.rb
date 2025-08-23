@@ -7,17 +7,21 @@ require 'date'
 require 'time'
 require 'logger'
 
-# Set default encoding to UTF-8
+set :port, ENV['APP_PORT']
+set :bind, '0.0.0.0'
+
+WEBCAL_CACHE = {}
+CACHE_EXPIRATION_MINUTES = 10
+PAGE_REFRESH_MINUTES = 1
+
 Encoding.default_external = Encoding::UTF_8
 Encoding.default_internal = Encoding::UTF_8
 
-# Set Russian locale
 Date::MONTHNAMES = [nil, 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 Date::DAYNAMES = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота']
 Date::ABBR_DAYNAMES = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
 Date::ABBR_MONTHNAMES = [nil, 'янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
-# Russian translations
 RUSSIAN_TRANSLATIONS = {
   'All Day' => 'Весь день',
   'No Title' => 'Без названия',
@@ -41,14 +45,6 @@ def logger
   @logger.level = Logger::INFO
   @logger
 end
-
-# Configure Sinatra
-set :port, ENV['APP_PORT']
-set :bind, '0.0.0.0'
-
-# In-memory cache for webcal data
-WEBCAL_CACHE = {}
-CACHE_EXPIRATION_MINUTES = 10
 
 def get_cached_webcal_data(calendar_url)
   if WEBCAL_CACHE.key?(calendar_url)
