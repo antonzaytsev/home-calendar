@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, jsonify
 import requests
 import icalendar
 import datetime as dt
@@ -9,7 +9,6 @@ import logging
 import os
 
 app = Flask(__name__)
-app.secret_key = 'calendar_secret_key_change_in_production'
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -140,7 +139,7 @@ def format_event_time(event):
 @app.route('/')
 def calendar_view():
     """Main calendar view"""
-    webcal_url = session.get('webcal_url')
+    webcal_url = os.getenv('WEBCAL_URL')
     error = None
     week_events = {}
     week_dates = get_week_dates()
@@ -154,7 +153,7 @@ def calendar_view():
         else:
             error = "Failed to fetch calendar data. Please check your webcal URL."
     else:
-        error = "Please configure your webcal URL."
+        error = "WEBCAL_URL environment variable not configured."
     
     return render_template('calendar.html', 
                          week_dates=week_dates,
@@ -163,20 +162,43 @@ def calendar_view():
                          today=dt.date.today(),
                          format_event_time=format_event_time)
 
-@app.route('/settings', methods=['GET', 'POST'])
-def settings():
-    """Settings page to configure webcal URL"""
-    if request.method == 'POST':
-        webcal_url = request.form.get('webcal_url', '').strip()
-        if webcal_url:
-            session['webcal_url'] = webcal_url
-            return redirect(url_for('calendar_view'))
-        else:
-            error = "Please enter a valid webcal URL"
-            return render_template('settings.html', error=error, webcal_url=webcal_url)
+@app.route('/api/calendar/events')
+def api_calendar_events():
+    """API endpoint to get calendar events"""
+    webcal_url = os.getenv('WEBCAL_URL')
     
-    webcal_url = session.get('webcal_url', '')
-    return render_template('settings.html', webcal_url=webcal_url)
+    if not webcal_url:
+        return jsonify({'error': 'WEBCAL_URL environment variable not configured'}), 400
+    
+    # Fetch and parse calendar data
+    ical_content = fetch_webcal_data(webcal_url)
+    if not ical_content:
+        return jsonify({'error': 'Failed to fetch calendar data'}), 500
+    
+    all_events = parse_calendar_events(ical_content)
+    
+    # Convert events to JSON-serializable format
+    json_events = []
+    for event in all_events:
+        json_event = {
+            'uid': event['uid'],
+            'summary': event['summary'],
+            'description': event['description'],
+            'location': event['location'],
+            'all_day': event['all_day']
+        }
+        
+        # Convert dates to ISO format
+        if isinstance(event['start'], dt.datetime):
+            json_event['start'] = event['start'].isoformat()
+            json_event['end'] = event['end'].isoformat()
+        else:
+            json_event['start'] = event['start'].isoformat()
+            json_event['end'] = event['end'].isoformat()
+            
+        json_events.append(json_event)
+    
+    return jsonify({'events': json_events})
 
 @app.route('/health')
 def health_check():

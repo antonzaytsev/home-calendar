@@ -7,7 +7,10 @@ services:
       - "9000:5000"
     volumes:
       - ./backend:/app
+    env_file:
+      - .env
     environment:
-      - FLASK_ENV=development
-      - FLASK_DEBUG=1
+      - FLASK_ENV=${FLASK_ENV:-development}
+      - FLASK_DEBUG=${FLASK_DEBUG:-1}
+      - WEBCAL_URL=${WEBCAL_URL}
     restart: unless-stopped
