@@ -143,6 +143,11 @@
             color: white;
         }
 
+        .day-header.weekend .day-name,
+        .day-header.weekend .day-number {
+            color: #fd0000;
+        }
+
         .day-name {
             font-size: 12px;
             color: #8e8e93;
@@ -364,7 +369,7 @@
             <div class="header-row">
                 <div class="time-header"></div>
                 <% @week_dates.each_with_index do |date, index| %>
-                <div class="day-header <%= 'today' if date == @today %>">
+                <div class="day-header <%= 'today' if date == @today %> <%= 'weekend' if date.wday == 0 || date.wday == 6 %>">
                     <div class="day-name"><%= Date::ABBR_DAYNAMES[date.wday].upcase %></div>
                     <div class="day-number"><%= date.day %></div>
                 </div>
