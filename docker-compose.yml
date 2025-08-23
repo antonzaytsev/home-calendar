@@ -10,7 +10,7 @@ services:
     env_file:
       - .env
     environment:
-      - FLASK_ENV=${FLASK_ENV:-development}
-      - FLASK_DEBUG=${FLASK_DEBUG:-1}
+      - RACK_ENV=${RACK_ENV:-development}
       - WEBCAL_URL=${WEBCAL_URL}
+      - APP_PORT=${APP_PORT:-5000}
     restart: unless-stopped
