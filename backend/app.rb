@@ -33,22 +33,60 @@ def t(text)
 end
 
 # Set up logging
-logger = Logger.new(STDOUT)
-logger.level = Logger::INFO
+
+def logger
+  return @logger if @logger
+
+  @logger = Logger.new(STDOUT)
+  @logger.level = Logger::INFO
+  @logger
+end
 
 # Configure Sinatra
 set :port, ENV['APP_PORT']
 set :bind, '0.0.0.0'
 
-def fetch_webcal_data(webcal_url)
-  """Fetch calendar data from webcal URL"""
+# In-memory cache for webcal data
+WEBCAL_CACHE = {}
+CACHE_EXPIRATION_MINUTES = 10
+
+def get_cached_webcal_data(calendar_url)
+  if WEBCAL_CACHE.key?(calendar_url)
+    cache_entry = WEBCAL_CACHE[calendar_url]
+    expiration_time = cache_entry[:timestamp] + (CACHE_EXPIRATION_MINUTES * 60)
+
+    if Time.now < expiration_time
+      logger.info("Using cached webcal data for #{calendar_url}")
+      return cache_entry[:data]
+    else
+      logger.info("Cache expired for #{calendar_url}, removing")
+      WEBCAL_CACHE.delete(calendar_url)
+    end
+  end
+
+  nil
+end
+
+def cache_webcal_data(calendar_url, data)
+  WEBCAL_CACHE[calendar_url] = {
+    data: data,
+    timestamp: Time.now
+  }
+  logger.info("Cached webcal data for #{calendar_url}")
+end
+
+def fetch_webcal_data(calendar_url)
+  original_url = calendar_url
+  cached_data = get_cached_webcal_data(original_url)
+  return cached_data if cached_data
+
   begin
-    # Convert webcal:// to https://
-    if webcal_url.start_with?('webcal://')
-      webcal_url = webcal_url.sub('webcal://', 'https://')
+    if calendar_url.start_with?('webcal://')
+      calendar_url = calendar_url.sub('webcal://', 'https://')
     end
 
-    uri = URI(webcal_url)
+    logger.info("Fetching fresh webcal data from #{calendar_url}")
+    uri = URI(calendar_url)
     http = Net::HTTP.new(uri.host, uri.port)
     http.use_ssl = (uri.scheme == 'https')
     http.read_timeout = 10
@@ -57,6 +95,8 @@ def fetch_webcal_data(webcal_url)
     response = http.request(request)
 
     if response.is_a?(Net::HTTPSuccess)
+      # Cache the successful response
+      cache_webcal_data(original_url, response.body)
       return response.body
     else
       logger.error("HTTP error fetching webcal data: #{response.code}")
@@ -200,12 +240,12 @@ get '/' do
       target_date = nil
     end
   end
-  
+
   webcal_url = ENV['WEBCAL_URL']
   @error = nil
   @week_events = {}
   @week_dates = get_week_dates(target_date)
-  
+
   if webcal_url
     # Fetch and parse calendar data
     ical_content = fetch_webcal_data(webcal_url)
@@ -218,12 +258,12 @@ get '/' do
   else
     @error = t("WEBCAL_URL environment variable not configured.")
   end
-  
+
   # Calculate navigation dates
   current_center_date = @week_dates[3] # Middle date of current week
   @prev_week_date = (current_center_date - 7).strftime('%Y-%m-%d')
   @next_week_date = (current_center_date + 7).strftime('%Y-%m-%d')
-  
+
   @today = Date.today
   @now = Time.now
   @current_time_minutes = @now.hour * 60 + @now.min
@@ -287,7 +327,7 @@ end
 helpers do
   def format_event_time(event)
     return t('All Day') if event['all_day']
-    
+
     begin
       if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
         start_time = event['start'].strftime('%H:%M')
@@ -300,10 +340,10 @@ helpers do
       return t('All Day')
     end
   end
-  
+
   def event_top_position(event)
     return 0 if event['all_day']
-    
+
     begin
       if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
         start_time = event['start']
@@ -315,10 +355,10 @@ helpers do
     end
     0
   end
-  
+
   def event_height(event)
     return 20 if event['all_day']
-    
+
     begin
       if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time) &&
          event['end'].is_a?(Icalendar::Values::DateTime) || event['end'].is_a?(Time)
@@ -332,7 +372,7 @@ helpers do
     end
     20
   end
-  
+
   def format_hour(hour)
     return "#{hour}:00" # Use 24-hour format for Russian locale
   end
