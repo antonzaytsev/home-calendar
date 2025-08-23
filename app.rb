@@ -261,7 +261,7 @@ get '/' do
   @next_week_date = (current_center_date + 7).strftime('%Y-%m-%d')
 
   @today = Date.today
-  @now = Time.now
+  @now = Time.now.getlocal("+03:00")
   @current_time_minutes = @now.hour * 60 + @now.min
   erb :calendar
 end
@@ -316,7 +316,7 @@ end
 get '/health' do
   """Health check endpoint"""
   content_type :json
-  { status: t('healthy'), timestamp: Time.now.iso8601 }.to_json
+  { status: t('healthy'), timestamp: Time.now.getlocal("+03:00").iso8601 }.to_json
 end
 
 # Helper methods for ERB templates
