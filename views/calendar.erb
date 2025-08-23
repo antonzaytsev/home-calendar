@@ -23,6 +23,7 @@
         .calendar-container {
             height: 100%;
             position: relative;
+            padding-top: 70px;
         }
 
         .header {
@@ -37,7 +38,7 @@
             left: 0;
             right: 0;
             z-index: 20;
-            height: 72px;
+            height: 40px;
         }
 
         .header h1 {
@@ -55,7 +56,7 @@
             color: white;
             border: none;
             border-radius: 6px;
-            padding: 8px 12px;
+            padding: 2px 12px;
             text-decoration: none;
             font-size: 16px;
             font-weight: 500;
@@ -65,7 +66,7 @@
             text-align: center;
             line-height: 24px;
             min-width: 40px;
-            height: 40px;
+            height: 30px;
             vertical-align: middle;
         }
 
@@ -91,8 +92,6 @@
             text-align: right;
         }
 
-
-
         .error {
             background-color: #ff3b30;
             color: white;
@@ -109,11 +108,10 @@
             background-color: #2c2c2e;
             border-bottom: 1px solid #3a3a3c;
             position: fixed;
-            top: 71px;
+            top: 39px;
             left: 0;
             right: 0;
             z-index: 19;
-            height: 81px;
         }
 
         .header-row {
@@ -130,7 +128,7 @@
         }
 
         .day-header {
-            padding: 15px 10px;
+            padding: 7px 10px 0;
             text-align: center;
             border-right: 1px solid #3a3a3c;
             font-size: 14px;
@@ -143,20 +141,15 @@
             color: white;
         }
 
-        .day-header.weekend .day-name,
-        .day-header.weekend .day-number {
+        .day-header.weekend .day-name {
             color: #fd0000;
         }
 
         .day-name {
-            font-size: 12px;
-            color: #8e8e93;
-            margin-bottom: 2px;
-        }
-
-        .day-number {
             font-size: 18px;
             font-weight: 600;
+            color: #8e8e93;
+            line-height: 1;
         }
 
         .today .day-name {
@@ -166,7 +159,6 @@
         .calendar-body-wrapper {
             overflow-y: auto;
             overflow-x: hidden;
-            margin-top: 152px;
             height: 100%;
         }
 
@@ -195,7 +187,7 @@
             height: 60px;
             padding: 5px 10px;
             border-bottom: 1px solid #3a3a3c;
-            font-size: 11px;
+            font-size: 16px;
             color: #8e8e93;
         }
 
@@ -370,8 +362,7 @@
                 <div class="time-header"></div>
                 <% @week_dates.each_with_index do |date, index| %>
                 <div class="day-header <%= 'today' if date == @today %> <%= 'weekend' if date.wday == 0 || date.wday == 6 %>">
-                    <div class="day-name"><%= Date::ABBR_DAYNAMES[date.wday].upcase %></div>
-                    <div class="day-number"><%= date.day %></div>
+                    <div class="day-name"><%= Date::ABBR_DAYNAMES[date.wday].upcase %> <%= date.day %></div>
                 </div>
                 <% end %>
             </div>
@@ -455,8 +446,8 @@
 
             // Use setTimeout to ensure the layout is complete before scrolling
             setTimeout(function() {
-                calendarBody.scrollTop = scrollTop;
-            }, 100);
+                calendarBody.scrollTop = scrollTop+100;
+            }, 1000);
         });
 
         // Update current time line every minute
