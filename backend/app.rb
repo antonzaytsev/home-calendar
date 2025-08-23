@@ -174,7 +174,7 @@ get '/' do
   @error = nil
   @week_events = {}
   @week_dates = get_week_dates
-
+  
   if webcal_url
     # Fetch and parse calendar data
     ical_content = fetch_webcal_data(webcal_url)
@@ -187,8 +187,10 @@ get '/' do
   else
     @error = "WEBCAL_URL environment variable not configured."
   end
-
+  
   @today = Date.today
+  @now = Time.now
+  @current_time_minutes = @now.hour * 60 + @now.min
   erb :calendar
 end
 
@@ -248,7 +250,7 @@ end
 helpers do
   def format_event_time(event)
     return 'All Day' if event['all_day']
-
+    
     begin
       if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
         start_time = event['start'].strftime('%H:%M')
@@ -259,6 +261,50 @@ helpers do
       end
     rescue
       return 'All Day'
+    end
+  end
+  
+  def event_top_position(event)
+    return 0 if event['all_day']
+    
+    begin
+      if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
+        start_time = event['start']
+        minutes_from_midnight = start_time.hour * 60 + start_time.min
+        return (minutes_from_midnight * 60) / 60.0  # 60px per hour
+      end
+    rescue
+      return 0
+    end
+    0
+  end
+  
+  def event_height(event)
+    return 20 if event['all_day']
+    
+    begin
+      if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time) &&
+         event['end'].is_a?(Icalendar::Values::DateTime) || event['end'].is_a?(Time)
+        start_minutes = event['start'].hour * 60 + event['start'].min
+        end_minutes = event['end'].hour * 60 + event['end'].min
+        duration_minutes = end_minutes - start_minutes
+        return [(duration_minutes * 60) / 60.0, 20].max  # minimum 20px height
+      end
+    rescue
+      return 20
+    end
+    20
+  end
+  
+  def format_hour(hour)
+    if hour == 0
+      "12 AM"
+    elsif hour < 12
+      "#{hour} AM"
+    elsif hour == 12
+      "12 PM"
+    else
+      "#{hour - 12} PM"
     end
   end
 end
