@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="<%= PAGE_REFRESH_MINUTES * 60 %>>">
     <title>Домашний календарь</title>
     <style>
         * {
@@ -460,6 +459,10 @@
                 currentTimeLine.style.top = minutes + 'px';
             }
         }, 60000);
+
+        setTimeout(function() {
+            window.location.reload();
+        }, <%= PAGE_REFRESH_MINUTES * 60 * 1000 %>);
     </script>
 </body>
 </html>
