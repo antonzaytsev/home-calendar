@@ -30,13 +30,47 @@
             background-color: #2c2c2e;
             padding: 15px 20px;
             border-bottom: 1px solid #3a3a3c;
-            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .header h1 {
             font-size: 24px;
             font-weight: 600;
             color: #ffffff;
+            margin: 0;
+        }
+
+        .nav-button {
+            background-color: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 12px;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 40px;
+            height: 40px;
+        }
+
+        .nav-button:hover {
+            background-color: #0051D5;
+        }
+
+        .nav-button:active {
+            background-color: #004AAD;
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 10px;
         }
 
 
@@ -263,8 +297,21 @@
 <body>
     <div class="calendar-container">
         <div class="header">
+            <div class="header-nav">
+                <a href="/?date=<%= @prev_week_date %>" class="nav-button" title="Previous week: <%= @prev_week_date %>">‹</a>
+            </div>
             <h1><%= Date::MONTHNAMES[@week_dates.first.month] %> <%= @week_dates.first.year %></h1>
+            <div class="header-nav">
+                <a href="/?date=<%= @next_week_date %>" class="nav-button" title="Next week: <%= @next_week_date %>">›</a>
+            </div>
         </div>
+        
+        <!-- Debug info -->
+        <% if params[:debug] %>
+        <div style="background: #333; color: #fff; padding: 5px; font-size: 12px; text-align: center;">
+            DEBUG: Prev: <%= @prev_week_date %> | Next: <%= @next_week_date %> | Center: <%= @week_dates[3] %>
+        </div>
+        <% end %>
 
         <% if @error %>
         <div class="error"><%= @error %></div>

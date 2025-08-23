@@ -191,10 +191,20 @@ end
 
 get '/' do
   """Main calendar view"""
+  # Get date parameter for navigation
+  target_date = nil
+  if params[:date]
+    begin
+      target_date = Date.parse(params[:date])
+    rescue => e
+      target_date = nil
+    end
+  end
+  
   webcal_url = ENV['WEBCAL_URL']
   @error = nil
   @week_events = {}
-  @week_dates = get_week_dates
+  @week_dates = get_week_dates(target_date)
   
   if webcal_url
     # Fetch and parse calendar data
@@ -208,6 +218,11 @@ get '/' do
   else
     @error = t("WEBCAL_URL environment variable not configured.")
   end
+  
+  # Calculate navigation dates
+  current_center_date = @week_dates[3] # Middle date of current week
+  @prev_week_date = (current_center_date - 7).strftime('%Y-%m-%d')
+  @next_week_date = (current_center_date + 7).strftime('%Y-%m-%d')
   
   @today = Date.today
   @now = Time.now
@@ -260,6 +275,7 @@ get '/api/calendar/events' do
 
   { events: json_events }.to_json
 end
+
 
 get '/health' do
   """Health check endpoint"""
