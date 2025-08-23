@@ -1,51 +1,26 @@
 # Home Calendar
 
-A simple weekly calendar display optimized for iPad 1 that shows events from iCloud webcal sources.
+A simple weekly calendar display that shows events from iCloud webcal sources, specifically designed to run on iPad 1st generation.
 
-## Project Structure
+## What it is
 
-- `backend/` - Simple Flask application with server-side rendering
-- `templates/` - HTML templates for calendar and settings pages
+A Ruby Sinatra web application that displays your calendar events in a clean weekly view with Russian localization. The main idea is to run this app on iPad 1st generation, which is very old and doesn't support modern JavaScript and CSS. That's why it uses server-side rendering, minimal JavaScript, and simple HTML/CSS for maximum compatibility with legacy devices.
 
-## Development
+## How to start it
 
-### Prerequisites
-- Docker
-- Docker Compose
+1. Set your iCloud webcal URL in a `.env` file:
+   ```
+   WEBCAL_URL=your_ical_url_here
+   ```
 
-### Running the Application
-
-1. Start the application:
+2. Start with Docker:
    ```bash
    docker-compose up --build
    ```
 
-2. Access the application:
-   - Calendar: http://localhost:9000
+3. Open http://localhost:9000 in your browser
 
-3. To run in background:
-   ```bash
-   docker-compose up -d --build
-   ```
-
-4. To stop the application:
+4. To stop:
    ```bash
    docker-compose down
    ```
-
-### Configuration
-
-1. Open the application in your browser at http://localhost:9000
-2. Click the settings button (⚙️) in the top right corner, or go to http://localhost:9000/settings
-3. Enter your iCloud webcal URL (found in Calendar app → Calendar settings → Public Calendar)
-4. The page will automatically refresh every 10 minutes to show new events
-
-## Features
-
-- Simple table-based weekly calendar view with current day centered
-- iCloud webcal integration
-- Optimized for iPad 1 (minimal JavaScript, fast rendering)
-- Server-side rendering for maximum compatibility
-- Auto-refresh every 10 minutes
-- Large fonts and touch-friendly interface
-- Dark theme for always-on display
