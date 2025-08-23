@@ -21,18 +21,17 @@
         }
 
         .calendar-container {
-            display: flex;
-            flex-direction: column;
             height: 100vh;
+            position: relative;
         }
 
         .header {
             background-color: #2c2c2e;
             padding: 15px 20px;
             border-bottom: 1px solid #3a3a3c;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            display: table;
+            width: 100%;
+            table-layout: fixed;
         }
 
         .header h1 {
@@ -40,6 +39,9 @@
             font-weight: 600;
             color: #ffffff;
             margin: 0;
+            display: table-cell;
+            text-align: center;
+            vertical-align: middle;
         }
 
         .nav-button {
@@ -53,11 +55,12 @@
             font-weight: 500;
             cursor: pointer;
             transition: background-color 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: inline-block;
+            text-align: center;
+            line-height: 24px;
             min-width: 40px;
             height: 40px;
+            vertical-align: middle;
         }
 
         .nav-button:hover {
@@ -69,8 +72,17 @@
         }
 
         .header-nav {
-            display: flex;
-            gap: 10px;
+            display: table-cell;
+            vertical-align: middle;
+            width: 80px;
+        }
+        
+        .header-nav:first-child {
+            text-align: left;
+        }
+        
+        .header-nav:last-child {
+            text-align: right;
         }
 
 
@@ -85,13 +97,17 @@
         }
 
         .calendar-header {
-            display: grid;
-            grid-template-columns: 80px repeat(7, 1fr);
+            display: table;
+            width: 100%;
+            table-layout: fixed;
             background-color: #2c2c2e;
             border-bottom: 1px solid #3a3a3c;
-            position: sticky;
-            top: 0;
+            position: relative;
             z-index: 10;
+        }
+        
+        .header-row {
+            display: table-row;
         }
 
         .time-header {
@@ -99,6 +115,8 @@
             border-right: 1px solid #3a3a3c;
             font-size: 12px;
             color: #8e8e93;
+            display: table-cell;
+            width: 80px;
         }
 
         .day-header {
@@ -107,6 +125,7 @@
             border-right: 1px solid #3a3a3c;
             font-size: 14px;
             font-weight: 500;
+            display: table-cell;
         }
 
         .day-header.today {
@@ -130,17 +149,25 @@
         }
 
         .calendar-body {
-            display: grid;
-            grid-template-columns: 80px repeat(7, 1fr);
+            display: table;
+            width: 100%;
+            table-layout: fixed;
             height: calc(100vh - 120px);
             overflow-y: auto;
             position: relative;
+        }
+        
+        .calendar-row {
+            display: table-row;
         }
 
         .time-column {
             background-color: #2c2c2e;
             border-right: 1px solid #3a3a3c;
             position: relative;
+            display: table-cell;
+            width: 80px;
+            vertical-align: top;
         }
 
         .time-slot {
@@ -149,14 +176,14 @@
             border-bottom: 1px solid #3a3a3c;
             font-size: 11px;
             color: #8e8e93;
-            display: flex;
-            align-items: flex-start;
         }
 
         .day-column {
             border-right: 1px solid #3a3a3c;
             position: relative;
             background-color: #1c1c1e;
+            display: table-cell;
+            vertical-align: top;
         }
 
         .hour-grid {
@@ -298,23 +325,26 @@
         <% end %>
 
         <div class="calendar-header">
-            <div class="time-header"></div>
-            <% @week_dates.each_with_index do |date, index| %>
-            <div class="day-header <%= 'today' if date == @today %>">
-                <div class="day-name"><%= Date::ABBR_DAYNAMES[date.wday].upcase %></div>
-                <div class="day-number"><%= date.day %></div>
-            </div>
-            <% end %>
-        </div>
-
-        <div class="calendar-body">
-            <div class="time-column">
-                <% (0..23).each do |hour| %>
-                <div class="time-slot">
-                    <%= format_hour(hour) %>
+            <div class="header-row">
+                <div class="time-header"></div>
+                <% @week_dates.each_with_index do |date, index| %>
+                <div class="day-header <%= 'today' if date == @today %>">
+                    <div class="day-name"><%= Date::ABBR_DAYNAMES[date.wday].upcase %></div>
+                    <div class="day-number"><%= date.day %></div>
                 </div>
                 <% end %>
             </div>
+        </div>
+
+        <div class="calendar-body">
+            <div class="calendar-row">
+                <div class="time-column">
+                    <% (0..23).each do |hour| %>
+                    <div class="time-slot">
+                        <%= format_hour(hour) %>
+                    </div>
+                    <% end %>
+                </div>
 
             <% @week_dates.each_with_index do |date, day_index| %>
             <div class="day-column">
@@ -360,6 +390,7 @@
                 <% end %>
             </div>
             <% end %>
+            </div>
         </div>
 
         <div class="footer">
