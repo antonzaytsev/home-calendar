@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="refresh" content="600">
-    <title>Home Calendar</title>
+    <title>Домашний календарь</title>
     <style>
         * {
             margin: 0;
@@ -277,8 +277,8 @@
 <body>
     <div class="calendar-container">
         <div class="header">
-            <h1><%= @week_dates.first.strftime('%B %Y') %></h1>
-            <a href="/settings" class="settings-link">⚙️ Settings</a>
+            <h1><%= Date::MONTHNAMES[@week_dates.first.month] %> <%= @week_dates.first.year %></h1>
+            <a href="/settings" class="settings-link">⚙️ Настройки</a>
         </div>
 
         <% if @error %>
@@ -289,8 +289,8 @@
             <div class="time-header"></div>
             <% @week_dates.each_with_index do |date, index| %>
             <div class="day-header <%= 'today' if date == @today %>">
-                <div class="day-name"><%= date.strftime('%a').upcase %></div>
-                <div class="day-number"><%= date.strftime('%-d') %></div>
+                <div class="day-name"><%= Date::ABBR_DAYNAMES[date.wday].upcase %></div>
+                <div class="day-number"><%= date.day %></div>
             </div>
             <% end %>
         </div>
@@ -351,7 +351,7 @@
         </div>
 
         <div class="footer">
-            Last updated: <%= @now.strftime('%Y-%m-%d %H:%M') %> | Auto-refresh every 10 minutes
+            Последнее обновление: <%= @now.strftime('%d.%m.%Y %H:%M') %> | Автообновление каждые 10 минут
         </div>
     </div>
 

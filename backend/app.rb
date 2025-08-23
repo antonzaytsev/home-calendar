@@ -11,6 +11,27 @@ require 'logger'
 Encoding.default_external = Encoding::UTF_8
 Encoding.default_internal = Encoding::UTF_8
 
+# Set Russian locale
+Date::MONTHNAMES = [nil, 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+Date::DAYNAMES = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота']
+Date::ABBR_DAYNAMES = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
+Date::ABBR_MONTHNAMES = [nil, 'янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+
+# Russian translations
+RUSSIAN_TRANSLATIONS = {
+  'All Day' => 'Весь день',
+  'No Title' => 'Без названия',
+  'Failed to fetch calendar data. Please check your webcal URL.' => 'Не удалось загрузить данные календаря. Проверьте URL webcal.',
+  'WEBCAL_URL environment variable not configured.' => 'Переменная окружения WEBCAL_URL не настроена.',
+  'WEBCAL_URL environment variable not configured' => 'Переменная окружения WEBCAL_URL не настроена',
+  'Failed to fetch calendar data' => 'Не удалось загрузить данные календаря',
+  'healthy' => 'исправно'
+}.freeze
+
+def t(text)
+  RUSSIAN_TRANSLATIONS[text] || text
+end
+
 # Set up logging
 logger = Logger.new(STDOUT)
 logger.level = Logger::INFO
@@ -58,7 +79,7 @@ def parse_calendar_events(ical_content)
         event = {}
 
         # Extract basic event information
-        event['summary'] = (component.summary.to_s || 'No Title').dup.force_encoding('UTF-8')
+        event['summary'] = (component.summary.to_s || t('No Title')).dup.force_encoding('UTF-8')
         event['description'] = (component.description.to_s || '').dup.force_encoding('UTF-8')
         event['location'] = (component.location.to_s || '').dup.force_encoding('UTF-8')
 
@@ -153,7 +174,7 @@ end
 
 def format_event_time(event)
   """Format event time for display"""
-  return 'All Day' if event['all_day']
+  return t('All Day') if event['all_day']
 
   begin
     if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
@@ -161,10 +182,10 @@ def format_event_time(event)
       end_time = event['end'].strftime('%H:%M')
       return "#{start_time} - #{end_time}"
     else
-      return 'All Day'
+      return t('All Day')
     end
   rescue
-    return 'All Day'
+    return t('All Day')
   end
 end
 
@@ -182,10 +203,10 @@ get '/' do
       all_events = parse_calendar_events(ical_content)
       @week_events = filter_events_for_week(all_events, @week_dates)
     else
-      @error = "Failed to fetch calendar data. Please check your webcal URL."
+      @error = t("Failed to fetch calendar data. Please check your webcal URL.")
     end
   else
-    @error = "WEBCAL_URL environment variable not configured."
+    @error = t("WEBCAL_URL environment variable not configured.")
   end
   
   @today = Date.today
@@ -202,14 +223,14 @@ get '/api/calendar/events' do
 
   if webcal_url.nil? || webcal_url.empty?
     status 400
-    return { error: 'WEBCAL_URL environment variable not configured' }.to_json
+    return { error: t('WEBCAL_URL environment variable not configured') }.to_json
   end
 
   # Fetch and parse calendar data
   ical_content = fetch_webcal_data(webcal_url)
   if ical_content.nil?
     status 500
-    return { error: 'Failed to fetch calendar data' }.to_json
+    return { error: t('Failed to fetch calendar data') }.to_json
   end
 
   all_events = parse_calendar_events(ical_content)
@@ -243,13 +264,13 @@ end
 get '/health' do
   """Health check endpoint"""
   content_type :json
-  { status: 'healthy', timestamp: Time.now.iso8601 }.to_json
+  { status: t('healthy'), timestamp: Time.now.iso8601 }.to_json
 end
 
 # Helper methods for ERB templates
 helpers do
   def format_event_time(event)
-    return 'All Day' if event['all_day']
+    return t('All Day') if event['all_day']
     
     begin
       if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
@@ -257,10 +278,10 @@ helpers do
         end_time = event['end'].strftime('%H:%M')
         return "#{start_time} - #{end_time}"
       else
-        return 'All Day'
+        return t('All Day')
       end
     rescue
-      return 'All Day'
+      return t('All Day')
     end
   end
   
@@ -297,14 +318,6 @@ helpers do
   end
   
   def format_hour(hour)
-    if hour == 0
-      "12 AM"
-    elsif hour < 12
-      "#{hour} AM"
-    elsif hour == 12
-      "12 PM"
-    else
-      "#{hour - 12} PM"
-    end
+    return "#{hour}:00" # Use 24-hour format for Russian locale
   end
 end
