@@ -37,7 +37,7 @@
             top: 0;
             left: 0;
             right: 0;
-            z-index: 20;
+            z-index: 10;
             height: 40px;
         }
 
@@ -111,7 +111,7 @@
             top: 39px;
             left: 0;
             right: 0;
-            z-index: 19;
+            z-index: 10;
         }
 
         .header-row {
@@ -318,6 +318,7 @@
             position: fixed;
             bottom: 0;
             width: 100%;
+            z-index: 10;
         }
 
         /* Scrollbar styling */
@@ -444,15 +445,15 @@
             const calendarBody = document.querySelector('.calendar-body-wrapper');
 
             const currentHour = Math.floor(currentTimeMinutes / 60);
-            const scrollTop = Math.max(0, (currentHour-5) * 60);
+            const scrollTop = Math.max(0, (currentHour - 5) * 60) + 70;
 
+            // alert(scrollTop + " " + currentHour)
             // Use setTimeout to ensure the layout is complete before scrolling
             setTimeout(function() {
-                calendarBody.scrollTop = scrollTop+70;
-            }, 1000);
+                calendarBody.scrollTop = scrollTop;
+            }, 500);
         });
 
-        // Update current time line every minute
         setInterval(function() {
             const now = new Date();
             const minutes = now.getHours() * 60 + now.getMinutes();
