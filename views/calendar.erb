@@ -439,18 +439,16 @@
     </div>
 
     <script>
-        // Auto-scroll to current time on page load
         document.addEventListener('DOMContentLoaded', function() {
             const currentTimeMinutes = <%= @current_time_minutes %>;
             const calendarBody = document.querySelector('.calendar-body-wrapper');
 
-            // Scroll to current hour (start of the current hour)
             const currentHour = Math.floor(currentTimeMinutes / 60);
-            const scrollTop = Math.max(0, currentHour * 61); // 60px per hour
+            const scrollTop = Math.max(0, (currentHour-5) * 60);
 
             // Use setTimeout to ensure the layout is complete before scrolling
             setTimeout(function() {
-                calendarBody.scrollTop = scrollTop+100;
+                calendarBody.scrollTop = scrollTop+70;
             }, 1000);
         });
 
