@@ -154,7 +154,6 @@ def parse_calendar_events(ical_content)
 end
 
 def get_week_dates(target_date = nil)
-  """Get 7 days centered around target date (target date in middle)"""
   if target_date.nil?
     target_date = Date.today
   elsif target_date.is_a?(String)
@@ -163,8 +162,7 @@ def get_week_dates(target_date = nil)
     target_date = target_date.to_date
   end
 
-  # Put target date in the middle (position 3 of 7)
-  start_day = target_date - 3
+  start_day = target_date - 1
   (0..6).map { |i| start_day + i }
 end
 
@@ -255,10 +253,9 @@ get '/' do
     @error = t("WEBCAL_URL environment variable not configured.")
   end
 
-  # Calculate navigation dates
-  current_center_date = @week_dates[3] # Middle date of current week
-  @prev_week_date = (current_center_date - 7).strftime('%Y-%m-%d')
-  @next_week_date = (current_center_date + 7).strftime('%Y-%m-%d')
+  current_reference_date = @week_dates[1]
+  @prev_week_date = (current_reference_date - 7).strftime('%Y-%m-%d')
+  @next_week_date = (current_reference_date + 7).strftime('%Y-%m-%d')
 
   @today = Date.today
   @now = Time.now.getlocal("+03:00")
