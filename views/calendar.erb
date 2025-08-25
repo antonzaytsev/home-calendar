@@ -15,8 +15,6 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
             background-color: #1c1c1e;
             color: #ffffff;
-            height: 100vh;
-            overflow: hidden;
         }
 
         .calendar-container {
@@ -157,9 +155,6 @@
         }
 
         .calendar-body-wrapper {
-            overflow-y: auto;
-            overflow-x: hidden;
-            height: 100%;
         }
 
         .calendar-body {
@@ -346,7 +341,7 @@
             <div class="header-nav">
                 <a href="/?date=<%= @prev_week_date %>" class="nav-button" title="Previous week: <%= @prev_week_date %>">‹ назад</a>
             </div>
-            <h1><%= Date::MONTHNAMES[@week_dates.first.month] %> <%= @week_dates.first.year %></h1>
+            <h1><%= [Date::MONTHNAMES[@week_dates.first.month], Date::MONTHNAMES[@week_dates.last.month]].uniq.join('-') %> <%= @week_dates.first.year %></h1>
             <div class="header-nav">
                 <a href="/?date=<%= @next_week_date %>" class="nav-button" title="Next week: <%= @next_week_date %>">вперед ›</a>
             </div>
@@ -442,16 +437,12 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const currentTimeMinutes = <%= @current_time_minutes %>;
-            const calendarBody = document.querySelector('.calendar-body-wrapper');
-
             const currentHour = Math.floor(currentTimeMinutes / 60);
             const scrollTop = Math.max(0, (currentHour - 5) * 60) + 70;
 
-            // alert(scrollTop + " " + currentHour)
-            // Use setTimeout to ensure the layout is complete before scrolling
             setTimeout(function() {
-                calendarBody.scrollTop = scrollTop;
-            }, 500);
+                window.scrollTo(0, scrollTop);
+            }, 300);
         });
 
         setInterval(function() {
