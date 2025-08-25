@@ -11,6 +11,19 @@ services:
       - .env
     environment:
       - RACK_ENV=${RACK_ENV:-development}
-      - WEBCAL_URL=${WEBCAL_URL}
       - APP_PORT=${APP_PORT:-5000}
+    depends_on:
+      - webcal-fetcher
+    restart: unless-stopped
+
+  webcal-fetcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.fetcher
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - WEBCAL_URL=${WEBCAL_URL}
     restart: unless-stopped

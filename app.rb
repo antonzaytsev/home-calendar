@@ -1,6 +1,4 @@
 require 'sinatra'
-require 'net/http'
-require 'uri'
 require 'icalendar'
 require 'json'
 require 'date'
@@ -10,9 +8,9 @@ require 'logger'
 set :port, ENV['APP_PORT']
 set :bind, '0.0.0.0'
 
-WEBCAL_CACHE = {}
-CACHE_EXPIRATION_MINUTES = 10
 PAGE_REFRESH_MINUTES = 1
+WEBCAL_FILE_PATH = '/app/webcal.ics'
+WEBCAL_JSON_PATH = '/app/webcal_events.json'
 
 Encoding.default_external = Encoding::UTF_8
 Encoding.default_internal = Encoding::UTF_8
@@ -25,10 +23,8 @@ Date::ABBR_MONTHNAMES = [nil, 'янв', 'фев', 'мар', 'апр', 'май', 
 RUSSIAN_TRANSLATIONS = {
   'All Day' => 'Весь день',
   'No Title' => 'Без названия',
-  'Failed to fetch calendar data. Please check your webcal URL.' => 'Не удалось загрузить данные календаря. Проверьте URL webcal.',
-  'WEBCAL_URL environment variable not configured.' => 'Переменная окружения WEBCAL_URL не настроена.',
-  'WEBCAL_URL environment variable not configured' => 'Переменная окружения WEBCAL_URL не настроена',
-  'Failed to fetch calendar data' => 'Не удалось загрузить данные календаря',
+  'Failed to read calendar data from file. Check if fetcher service is running.' => 'Не удалось прочитать данные календаря из файла. Проверьте работу службы загрузки.',
+  'Failed to read calendar data from file' => 'Не удалось прочитать данные календаря из файла',
   'healthy' => 'исправно'
 }.freeze
 
@@ -46,66 +42,72 @@ def logger
   @logger
 end
 
-def get_cached_webcal_data(calendar_url)
-  if WEBCAL_CACHE.key?(calendar_url)
-    cache_entry = WEBCAL_CACHE[calendar_url]
-    expiration_time = cache_entry[:timestamp] + (CACHE_EXPIRATION_MINUTES * 60)
-
-    if Time.now < expiration_time
-      logger.info("Using cached webcal data for #{calendar_url}")
-      return cache_entry[:data]
-    else
-      logger.info("Cache expired for #{calendar_url}, removing")
-      WEBCAL_CACHE.delete(calendar_url)
-    end
-  end
-
-  nil
-end
-
-def cache_webcal_data(calendar_url, data)
-  WEBCAL_CACHE[calendar_url] = {
-    data: data,
-    timestamp: Time.now
-  }
-  logger.info("Cached webcal data for #{calendar_url}")
-end
-
-def fetch_webcal_data(calendar_url)
-  original_url = calendar_url
-  cached_data = get_cached_webcal_data(original_url)
-  return cached_data if cached_data
-
+def read_parsed_events_from_json
   begin
-    if calendar_url.start_with?('webcal://')
-      calendar_url = calendar_url.sub('webcal://', 'https://')
-    end
+    if File.exist?(WEBCAL_JSON_PATH)
+      json_content = File.read(WEBCAL_JSON_PATH, encoding: 'UTF-8')
+      parsed_data = JSON.parse(json_content)
+      events = parsed_data['events'] || []
 
-    logger.info("Fetching fresh webcal data from #{calendar_url}")
-    uri = URI(calendar_url)
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = (uri.scheme == 'https')
-    http.read_timeout = 10
+      converted_events = []
+      events.each do |json_event|
+        event = {
+          'uid' => json_event['uid'] || '',
+          'summary' => json_event['summary'] || t('No Title'),
+          'description' => json_event['description'] || '',
+          'location' => json_event['location'] || '',
+          'all_day' => json_event['all_day'] || false
+        }
 
-    request = Net::HTTP::Get.new(uri)
-    response = http.request(request)
+        begin
+          if json_event['start']
+            if event['all_day']
+              event['start'] = Date.parse(json_event['start'])
+              event['end'] = Date.parse(json_event['end'])
+            else
+              event['start'] = Time.parse(json_event['start'])
+              event['end'] = Time.parse(json_event['end'])
+            end
+          else
+            next
+          end
+        rescue => e
+          logger.warn("Error parsing event dates for #{event['summary']}: #{e.message}")
+          next
+        end
 
-    if response.is_a?(Net::HTTPSuccess)
-      # Cache the successful response
-      cache_webcal_data(original_url, response.body)
-      return response.body
+        converted_events << event
+      end
+
+      logger.info("Successfully read #{converted_events.length} events from JSON cache")
+      return converted_events
     else
-      logger.error("HTTP error fetching webcal data: #{response.code}")
+      logger.warn("JSON cache file not found at #{WEBCAL_JSON_PATH}, falling back to ical parsing")
       return nil
     end
   rescue => e
-    logger.error("Error fetching webcal data: #{e}")
+    logger.error("Error reading JSON cache: #{e.message}, falling back to ical parsing")
     return nil
   end
 end
 
+def read_webcal_data_from_file_fallback
+  begin
+    if File.exist?(WEBCAL_FILE_PATH)
+      content = File.read(WEBCAL_FILE_PATH, encoding: 'UTF-8')
+      logger.info("Fallback: reading and parsing ical data from filesystem (#{content.length} bytes)")
+      return parse_calendar_events(content)
+    else
+      logger.error("Webcal file not found at #{WEBCAL_FILE_PATH}")
+      return []
+    end
+  rescue => e
+    logger.error("Error reading webcal data from file: #{e.message}")
+    return []
+  end
+end
+
 def parse_calendar_events(ical_content)
-  """Parse iCal content and extract events"""
   begin
     calendars = Icalendar::Calendar.parse(ical_content)
     events = []
@@ -224,8 +226,6 @@ def format_event_time(event)
 end
 
 get '/' do
-  """Main calendar view"""
-  # Get date parameter for navigation
   target_date = nil
   if params[:date]
     begin
@@ -235,22 +235,19 @@ get '/' do
     end
   end
 
-  webcal_url = ENV['WEBCAL_URL']
   @error = nil
   @week_events = {}
   @week_dates = get_week_dates(target_date)
 
-  if webcal_url
-    # Fetch and parse calendar data
-    ical_content = fetch_webcal_data(webcal_url)
-    if ical_content
-      all_events = parse_calendar_events(ical_content)
-      @week_events = filter_events_for_week(all_events, @week_dates)
-    else
-      @error = t("Failed to fetch calendar data. Please check your webcal URL.")
-    end
+  all_events = read_parsed_events_from_json
+  if all_events.nil?
+    all_events = read_webcal_data_from_file_fallback
+  end
+
+  if all_events && !all_events.empty?
+    @week_events = filter_events_for_week(all_events, @week_dates)
   else
-    @error = t("WEBCAL_URL environment variable not configured.")
+    @error = t("Failed to read calendar data from file. Check if fetcher service is running.")
   end
 
   current_reference_date = @week_dates[1]
@@ -263,55 +260,8 @@ get '/' do
   erb :calendar
 end
 
-get '/api/calendar/events' do
-  """API endpoint to get calendar events"""
-  content_type :json
-
-  webcal_url = ENV['WEBCAL_URL']
-
-  if webcal_url.nil? || webcal_url.empty?
-    status 400
-    return { error: t('WEBCAL_URL environment variable not configured') }.to_json
-  end
-
-  # Fetch and parse calendar data
-  ical_content = fetch_webcal_data(webcal_url)
-  if ical_content.nil?
-    status 500
-    return { error: t('Failed to fetch calendar data') }.to_json
-  end
-
-  all_events = parse_calendar_events(ical_content)
-
-  # Convert events to JSON-serializable format
-  json_events = []
-  all_events.each do |event|
-    json_event = {
-      uid: event['uid'],
-      summary: event['summary'],
-      description: event['description'],
-      location: event['location'],
-      all_day: event['all_day']
-    }
-
-    # Convert dates to ISO format
-    if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
-      json_event[:start] = event['start'].iso8601
-      json_event[:end] = event['end'].iso8601
-    else
-      json_event[:start] = event['start'].iso8601
-      json_event[:end] = event['end'].iso8601
-    end
-
-    json_events << json_event
-  end
-
-  { events: json_events }.to_json
-end
-
 
 get '/health' do
-  """Health check endpoint"""
   content_type :json
   { status: t('healthy'), timestamp: Time.now.getlocal("+03:00").iso8601 }.to_json
 end
