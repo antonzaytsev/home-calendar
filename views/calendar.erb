@@ -79,7 +79,7 @@
         .header-nav {
             display: table-cell;
             vertical-align: middle;
-            width: 120px;
+            width: 200px;
         }
 
         .header-nav:first-child {
@@ -344,6 +344,7 @@
         <div class="header">
             <div class="header-nav">
                 <a href="/?date=<%= @prev_week_date %>" class="nav-button" title="Предыдущие дни: <%= @prev_week_date %>">‹ назад</a>
+                <a href="/" class="nav-button" title="На сегодня" style="margin-left: 8px;">сегодня</a>
             </div>
             <h1><%= [Date::MONTHNAMES[@week_dates.first.month], Date::MONTHNAMES[@week_dates.last.month]].uniq.join('-') %> <%= @week_dates.first.year %></h1>
             <div class="header-nav">
