@@ -345,4 +345,143 @@ helpers do
     end
     false
   end
+
+  def events_overlap?(event1, event2)
+    """Check if two timed events overlap"""
+    return false if event1['all_day'] || event2['all_day']
+    
+    begin
+      start1_minutes = event1['start'].hour * 60 + event1['start'].min
+      end1_minutes = event1['end'].hour * 60 + event1['end'].min
+      start2_minutes = event2['start'].hour * 60 + event2['start'].min
+      end2_minutes = event2['end'].hour * 60 + event2['end'].min
+      
+      # Events overlap if start of one is before end of other, and vice versa
+      return start1_minutes < end2_minutes && start2_minutes < end1_minutes
+    rescue => e
+      logger.warn("Error checking event overlap: #{e}")
+      return false
+    end
+  end
+
+  def calculate_event_columns(events)
+    """Calculate column positions for overlapping events"""
+    return {} if events.empty?
+
+    # Filter out all-day events as they are handled separately
+    timed_events = events.reject { |event| event['all_day'] }
+    return {} if timed_events.empty?
+
+    # Sort events by start time
+    sorted_events = timed_events.sort_by do |event|
+      begin
+        event['start'].hour * 60 + event['start'].min
+      rescue
+        0
+      end
+    end
+
+    event_columns = {}
+    columns = [] # Array of arrays, each containing events in that column
+
+    sorted_events.each do |event|
+      # Find the first column where this event doesn't overlap with any existing event
+      column_index = 0
+      
+      columns.each_with_index do |column_events, index|
+        overlaps = false
+        column_events.each do |existing_event|
+          if events_overlap?(event, existing_event)
+            overlaps = true
+            break
+          end
+        end
+        
+        if !overlaps
+          column_index = index
+          break
+        end
+        column_index = index + 1
+      end
+      
+      # Ensure we have enough columns
+      while columns.length <= column_index
+        columns << []
+      end
+      
+      # Add event to the column
+      columns[column_index] << event
+      
+      # Store the column info for this event
+      event_columns[event['uid']] = {
+        column: column_index,
+        total_columns: columns.length,
+        overlapping_events: []
+      }
+    end
+
+    # Update total_columns for all events and find overlapping groups
+    event_columns.each do |uid, info|
+      event = sorted_events.find { |e| e['uid'] == uid }
+      overlapping_events = []
+      
+      sorted_events.each do |other_event|
+        if event != other_event && events_overlap?(event, other_event)
+          overlapping_events << other_event
+        end
+      end
+      
+      if !overlapping_events.empty?
+        # Calculate total columns needed for this overlapping group
+        group_columns = overlapping_events.map { |e| event_columns[e['uid']]&.dig(:column) }.compact + [info[:column]]
+        max_column = group_columns.max
+        total_columns_needed = max_column + 1
+        
+        info[:total_columns] = total_columns_needed
+        info[:overlapping_events] = overlapping_events
+        
+        # Update all events in the overlapping group
+        overlapping_events.each do |overlapping_event|
+          if event_columns[overlapping_event['uid']]
+            event_columns[overlapping_event['uid']][:total_columns] = total_columns_needed
+          end
+        end
+      end
+    end
+
+    event_columns
+  end
+
+  def event_left_position(event, event_columns)
+    """Calculate left position percentage for an event based on its column"""
+    column_info = event_columns[event['uid']]
+    return 2 unless column_info # default position if no overlap info
+    
+    column = column_info[:column]
+    total_columns = column_info[:total_columns]
+    
+    # Calculate position as percentage, leaving small margins
+    available_width = 96.0 # Use 96% to leave 2% margins on each side
+    column_width_percent = available_width / total_columns
+    left_percentage = 2.0 + (column * column_width_percent) # Start at 2% margin
+    
+    left_percentage.round(2)
+  end
+
+  def event_width(event, event_columns)
+    """Calculate width percentage for an event based on its column"""
+    column_info = event_columns[event['uid']]
+    return nil unless column_info # default width if no overlap info
+    
+    total_columns = column_info[:total_columns]
+    return nil if total_columns <= 1
+    
+    # Calculate width as percentage with small gap between events
+    available_width = 96.0 # Use 96% to leave margins
+    column_width_percent = available_width / total_columns
+    gap_percent = 0.5 # small gap between events
+    width_percent = column_width_percent - gap_percent
+    
+    width_percent.round(2)
+  end
 end

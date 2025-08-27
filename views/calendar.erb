@@ -236,9 +236,9 @@
 
         .event {
             position: absolute;
-            left: 4px;
-            right: 4px;
-            padding: 4px 8px;
+            left: 2%;
+            right: 2%;
+            padding: 2px;
             border-radius: 4px;
             font-size: 12px;
             line-height: 1.2;
@@ -247,6 +247,10 @@
             z-index: 3;
             border-left: 3px solid;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .event[style*="width"] {
+            right: auto;
         }
 
         .event-title {
@@ -412,9 +416,14 @@
                     <!-- Timed events -->
                     <% if @week_events[date] %>
                         <% timed_events = @week_events[date].reject { |event| event['all_day'] } %>
+                        <% event_columns = calculate_event_columns(timed_events) %>
                         <% timed_events.each do |event| %>
                         <% is_past = event_is_past?(event, @today, @now) %>
-                        <div class="event<%= ' past-event' if is_past %>" style="top: <%= event_top_position(event) %>px; height: <%= event_height(event) %>px;">
+                        <% left_pos = event_left_position(event, event_columns) %>
+                        <% width = event_width(event, event_columns) %>
+                        <% style_attrs = "top: #{event_top_position(event)}px; height: #{event_height(event)}px; left: #{left_pos}%;" %>
+                        <% style_attrs += " width: #{width}%;" if width %>
+                        <div class="event<%= ' past-event' if is_past %>" style="<%= style_attrs %>">
                             <div class="event-title"><%= event['summary'] %></div>
                             <div class="event-time"><%= format_event_time(event) %></div>
                             <% if event['location'] && !event['location'].empty? %>
