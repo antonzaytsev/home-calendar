@@ -12,6 +12,10 @@ PAGE_REFRESH_MINUTES = 1
 WEBCAL_FILE_PATH = '/app/webcal.ics'
 WEBCAL_JSON_PATH = '/app/webcal_events.json'
 
+DAYS_IN_PAST = 1      # Number of past days to show before today
+DAYS_IN_FUTURE = 2    # Number of future days to show after today
+TOTAL_DAYS = DAYS_IN_PAST + 1 + DAYS_IN_FUTURE  # Total days (past + today + future) - calculated automatically
+
 Encoding.default_external = Encoding::UTF_8
 Encoding.default_internal = Encoding::UTF_8
 
@@ -164,12 +168,12 @@ def get_week_dates(target_date = nil)
     target_date = target_date.to_date
   end
 
-  start_day = target_date - 1
-  (0..6).map { |i| start_day + i }
+  start_day = target_date - DAYS_IN_PAST
+  (0...TOTAL_DAYS).map { |i| start_day + i }
 end
 
 def filter_events_for_week(events, week_dates)
-  """Filter events to show only those in the given week"""
+  """Filter events to show only those in the given date range"""
   week_start = week_dates.first
   week_end = week_dates.last
 
@@ -250,13 +254,14 @@ get '/' do
     @error = t("Failed to read calendar data from file. Check if fetcher service is running.")
   end
 
-  current_reference_date = @week_dates[1]
-  @prev_week_date = (current_reference_date - 7).strftime('%Y-%m-%d')
-  @next_week_date = (current_reference_date + 7).strftime('%Y-%m-%d')
+  current_reference_date = @week_dates[DAYS_IN_PAST]
+  @prev_week_date = (current_reference_date - TOTAL_DAYS).strftime('%Y-%m-%d')
+  @next_week_date = (current_reference_date + TOTAL_DAYS).strftime('%Y-%m-%d')
 
   @today = Date.today
   @now = Time.now.getlocal("+03:00")
   @current_time_minutes = @now.hour * 60 + @now.min
+  @today_index = DAYS_IN_PAST
   erb :calendar
 end
 
@@ -349,13 +354,13 @@ helpers do
   def events_overlap?(event1, event2)
     """Check if two timed events overlap"""
     return false if event1['all_day'] || event2['all_day']
-    
+
     begin
       start1_minutes = event1['start'].hour * 60 + event1['start'].min
       end1_minutes = event1['end'].hour * 60 + event1['end'].min
       start2_minutes = event2['start'].hour * 60 + event2['start'].min
       end2_minutes = event2['end'].hour * 60 + event2['end'].min
-      
+
       # Events overlap if start of one is before end of other, and vice versa
       return start1_minutes < end2_minutes && start2_minutes < end1_minutes
     rescue => e
@@ -387,7 +392,7 @@ helpers do
     sorted_events.each do |event|
       # Find the first column where this event doesn't overlap with any existing event
       column_index = 0
-      
+
       columns.each_with_index do |column_events, index|
         overlaps = false
         column_events.each do |existing_event|
@@ -396,22 +401,22 @@ helpers do
             break
           end
         end
-        
+
         if !overlaps
           column_index = index
           break
         end
         column_index = index + 1
       end
-      
+
       # Ensure we have enough columns
       while columns.length <= column_index
         columns << []
       end
-      
+
       # Add event to the column
       columns[column_index] << event
-      
+
       # Store the column info for this event
       event_columns[event['uid']] = {
         column: column_index,
@@ -424,22 +429,22 @@ helpers do
     event_columns.each do |uid, info|
       event = sorted_events.find { |e| e['uid'] == uid }
       overlapping_events = []
-      
+
       sorted_events.each do |other_event|
         if event != other_event && events_overlap?(event, other_event)
           overlapping_events << other_event
         end
       end
-      
+
       if !overlapping_events.empty?
         # Calculate total columns needed for this overlapping group
         group_columns = overlapping_events.map { |e| event_columns[e['uid']]&.dig(:column) }.compact + [info[:column]]
         max_column = group_columns.max
         total_columns_needed = max_column + 1
-        
+
         info[:total_columns] = total_columns_needed
         info[:overlapping_events] = overlapping_events
-        
+
         # Update all events in the overlapping group
         overlapping_events.each do |overlapping_event|
           if event_columns[overlapping_event['uid']]
@@ -456,15 +461,15 @@ helpers do
     """Calculate left position percentage for an event based on its column"""
     column_info = event_columns[event['uid']]
     return 2 unless column_info # default position if no overlap info
-    
+
     column = column_info[:column]
     total_columns = column_info[:total_columns]
-    
+
     # Calculate position as percentage, leaving small margins
     available_width = 96.0 # Use 96% to leave 2% margins on each side
     column_width_percent = available_width / total_columns
     left_percentage = 2.0 + (column * column_width_percent) # Start at 2% margin
-    
+
     left_percentage.round(2)
   end
 
@@ -472,16 +477,16 @@ helpers do
     """Calculate width percentage for an event based on its column"""
     column_info = event_columns[event['uid']]
     return nil unless column_info # default width if no overlap info
-    
+
     total_columns = column_info[:total_columns]
     return nil if total_columns <= 1
-    
+
     # Calculate width as percentage with small gap between events
     available_width = 96.0 # Use 96% to leave margins
     column_width_percent = available_width / total_columns
     gap_percent = 0.5 # small gap between events
     width_percent = column_width_percent - gap_percent
-    
+
     width_percent.round(2)
   end
 end

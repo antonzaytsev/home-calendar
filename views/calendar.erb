@@ -343,19 +343,13 @@
     <div class="calendar-container">
         <div class="header">
             <div class="header-nav">
-                <a href="/?date=<%= @prev_week_date %>" class="nav-button" title="Previous week: <%= @prev_week_date %>">‹ назад</a>
+                <a href="/?date=<%= @prev_week_date %>" class="nav-button" title="Предыдущие дни: <%= @prev_week_date %>">‹ назад</a>
             </div>
             <h1><%= [Date::MONTHNAMES[@week_dates.first.month], Date::MONTHNAMES[@week_dates.last.month]].uniq.join('-') %> <%= @week_dates.first.year %></h1>
             <div class="header-nav">
-                <a href="/?date=<%= @next_week_date %>" class="nav-button" title="Next week: <%= @next_week_date %>">вперед ›</a>
+                <a href="/?date=<%= @next_week_date %>" class="nav-button" title="Следующие дни: <%= @next_week_date %>">вперед ›</a>
             </div>
         </div>
-
-        <% if params[:debug] %>
-        <div style="background: #333; color: #fff; padding: 5px; font-size: 12px; text-align: center;">
-            DEBUG: Prev: <%= @prev_week_date %> | Next: <%= @next_week_date %> | Today: <%= @week_dates[1] %>
-        </div>
-        <% end %>
 
         <% if @error %>
         <div class="error"><%= @error %></div>
