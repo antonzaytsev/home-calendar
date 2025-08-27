@@ -7,6 +7,7 @@ require 'logger'
 
 set :port, ENV['APP_PORT']
 set :bind, '0.0.0.0'
+set :public_folder, 'public'
 
 PAGE_REFRESH_MINUTES = 1
 WEBCAL_FILE_PATH = '/app/webcal.ics'

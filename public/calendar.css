@@ -1,0 +1,332 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background-color: #1c1c1e;
+    color: #ffffff;
+}
+
+.calendar-container {
+    height: 100%;
+    position: relative;
+    padding-top: 70px;
+    padding-bottom: 36px;
+}
+
+.header {
+    background-color: #2c2c2e;
+    padding: 0 20px;
+    border-bottom: 1px solid #3a3a3c;
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    height: 40px;
+}
+
+.header h1 {
+    font-size: 24px;
+    font-weight: 600;
+    color: #ffffff;
+    margin: 0;
+    display: table-cell;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.nav-button {
+    background-color: #007AFF;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 2px 12px;
+    text-decoration: none;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    display: inline-block;
+    text-align: center;
+    line-height: 24px;
+    min-width: 40px;
+    height: 30px;
+    vertical-align: middle;
+}
+
+.nav-button:hover {
+    background-color: #0051D5;
+}
+
+.nav-button:active {
+    background-color: #004AAD;
+}
+
+.header-nav {
+    display: table-cell;
+    vertical-align: middle;
+    width: 200px;
+}
+
+.header-nav:first-child {
+    text-align: left;
+}
+
+.header-nav:last-child {
+    text-align: right;
+}
+
+.error {
+    background-color: #ff3b30;
+    color: white;
+    padding: 12px;
+    margin: 10px 20px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.calendar-header {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+    background-color: #2c2c2e;
+    border-bottom: 1px solid #3a3a3c;
+    position: fixed;
+    top: 39px;
+    left: 0;
+    right: 0;
+    z-index: 10;
+}
+
+.header-row {
+    display: table-row;
+}
+
+.time-header {
+    padding: 15px 10px;
+    border-right: 1px solid #3a3a3c;
+    font-size: 12px;
+    color: #8e8e93;
+    display: table-cell;
+    width: 55px;
+}
+
+.day-header {
+    padding: 7px 10px 0;
+    text-align: center;
+    border-right: 1px solid #3a3a3c;
+    font-size: 14px;
+    font-weight: 500;
+    display: table-cell;
+}
+
+.day-header.today {
+    background-color: #007AFF;
+    color: white;
+}
+
+.day-header.weekend .day-name {
+    color: #fd0000;
+}
+
+.day-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: #8e8e93;
+    line-height: 1;
+}
+
+.today .day-name {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.calendar-body-wrapper {
+}
+
+.calendar-body {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+    height: 100%;
+    position: relative;
+}
+
+.calendar-row {
+    display: table-row;
+}
+
+.time-column {
+    background-color: #2c2c2e;
+    border-right: 1px solid #3a3a3c;
+    position: relative;
+    display: table-cell;
+    width: 55px;
+    vertical-align: top;
+}
+
+.time-slot {
+    height: 60px;
+    padding: 5px 0;
+    border-bottom: 1px solid #3a3a3c;
+    font-size: 16px;
+    color: #8e8e93;
+    text-align: center;
+}
+
+.day-column {
+    border-right: 1px solid #3a3a3c;
+    position: relative;
+    background-color: #1c1c1e;
+    display: table-cell;
+    vertical-align: top;
+}
+
+.hour-grid {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1440px; /* 24 hours * 60px */
+}
+
+.hour-line {
+    height: 60px;
+    border-bottom: 1px solid #3a3a3c;
+}
+
+.half-hour-line {
+    height: 30px;
+    border-bottom: 1px solid rgba(58, 58, 60, 0.5);
+}
+
+.current-time-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: #ff3b30;
+    z-index: 5;
+    box-shadow: 0 0 4px rgba(255, 59, 48, 0.6);
+}
+
+.current-time-line::before {
+    content: '';
+    position: absolute;
+    left: -4px;
+    top: -3px;
+    width: 8px;
+    height: 8px;
+    background-color: #ff3b30;
+    border-radius: 50%;
+}
+
+.event {
+    position: absolute;
+    left: 2%;
+    right: 2%;
+    padding: 2px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.2;
+    overflow: hidden;
+    cursor: pointer;
+    z-index: 3;
+    border-left: 3px solid;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.event[style*="width"] {
+    right: auto;
+}
+
+.event-title {
+    font-weight: 500;
+    color: white;
+    margin-bottom: 2px;
+}
+
+.event-time {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.event-location {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    margin-top: 2px;
+}
+
+/* Event colors */
+.event {
+    background-color: rgba(0, 122, 255, 0.8);
+    border-left-color: #007AFF;
+}
+
+.all-day-event {
+    position: sticky;
+    top: 0;
+    height: 20px !important;
+    background-color: rgba(142, 142, 147, 0.8) !important;
+    border-left-color: #8e8e93 !important;
+    margin-bottom: 2px;
+    z-index: 4;
+}
+
+/* Past events styling */
+.event.past-event {
+    background-color: rgba(90, 90, 90, 0.6) !important;
+    border-left-color: #5a5a5a !important;
+    opacity: 0.7;
+}
+
+.event.past-event .event-title {
+    color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.event.past-event .event-time,
+.event.past-event .event-location {
+    color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.all-day-event.past-event {
+    background-color: rgba(90, 90, 90, 0.6) !important;
+    border-left-color: #5a5a5a !important;
+}
+
+.footer {
+    background-color: #2c2c2e;
+    padding: 10px 20px;
+    text-align: center;
+    font-size: 12px;
+    color: #8e8e93;
+    border-top: 1px solid #3a3a3c;
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    z-index: 10;
+}
+
+/* Scrollbar styling */
+.calendar-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.calendar-body::-webkit-scrollbar-track {
+    background: #1c1c1e;
+}
+
+.calendar-body::-webkit-scrollbar-thumb {
+    background: #3a3a3c;
+    border-radius: 4px;
+}
+
+.calendar-body::-webkit-scrollbar-thumb:hover {
+    background: #48484a;
+}
