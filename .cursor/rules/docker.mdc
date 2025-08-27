@@ -1,0 +1,5 @@
+---
+description: Always use docker to operate with project
+globs:
+alwaysApply: true
+---

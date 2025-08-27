@@ -1,0 +1,5 @@
+---
+description: Every change should be compatible with Safari on iPad 1
+globs:
+alwaysApply: true
+---
