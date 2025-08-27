@@ -107,8 +107,11 @@
 
     <script src="/calendar.js"></script>
     <script>
-        // Set configuration values from server
-        setCalendarConfig(<%= @current_time_minutes %>, <%= PAGE_REFRESH_MINUTES %>);
+        setCalendarConfig({
+            currentTimeMinutes: <%= @current_time_minutes %>,
+            pageRefreshMinutes: <%= PAGE_REFRESH_MINUTES %>,
+            isTodayVisible: <%= @week_dates.include?(@today) %>
+        });
     </script>
 </body>
 </html>

@@ -1,6 +1,6 @@
-require 'sinatra'
-require 'icalendar'
-require 'json'
+require 'bundler/setup'
+Bundler.require
+
 require 'date'
 require 'time'
 require 'logger'
