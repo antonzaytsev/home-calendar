@@ -235,6 +235,70 @@ get '/' do
 end
 
 
+get '/events' do
+  content_type :json
+  
+  # Get date range from parameters
+  start_date_param = params[:start_date]
+  end_date_param = params[:end_date]
+  
+  unless start_date_param && end_date_param
+    halt 400, { error: 'start_date and end_date parameters are required' }.to_json
+  end
+  
+  begin
+    start_date = Date.parse(start_date_param)
+    end_date = Date.parse(end_date_param)
+  rescue => e
+    halt 400, { error: 'Invalid date format. Use YYYY-MM-DD' }.to_json
+  end
+  
+  # Read events from JSON cache first, fallback to ical
+  all_events = read_parsed_events_from_json
+  if all_events.nil?
+    all_events = read_webcal_data_from_file_fallback
+  end
+  
+  if all_events.nil? || all_events.empty?
+    return { 
+      events: {},
+      error: t("Failed to read calendar data from file. Check if fetcher service is running.")
+    }.to_json
+  end
+  
+  # Filter events for the requested date range
+  week_dates = []
+  current_date = start_date
+  while current_date <= end_date
+    week_dates << current_date
+    current_date = current_date + 1
+  end
+  
+  week_events = filter_events_for_week(all_events, week_dates)
+  
+  # Convert events to JSON-friendly format
+  json_events = {}
+  week_events.each do |date, events|
+    date_key = date.strftime('%Y-%m-%d')
+    json_events[date_key] = events.map do |event|
+      {
+        uid: event['uid'],
+        summary: event['summary'],
+        description: event['description'],
+        location: event['location'],
+        all_day: event['all_day'],
+        start: event['start'].respond_to?(:iso8601) ? event['start'].iso8601 : event['start'].to_s,
+        end: event['end'].respond_to?(:iso8601) ? event['end'].iso8601 : event['end'].to_s
+      }
+    end
+  end
+  
+  {
+    events: json_events,
+    timestamp: Time.now.getlocal("+03:00").iso8601
+  }.to_json
+end
+
 get '/health' do
   content_type :json
   { status: t('healthy'), timestamp: Time.now.getlocal("+03:00").iso8601 }.to_json

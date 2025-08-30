@@ -27,10 +27,16 @@ var calendar = {
   daysInFuture: 2,
   totalDays: 4,
   refreshPagePeriodSeconds: 60,
+  events: {},
+  eventsLoaded: false,
 
   // Russian translations
   monthNames: [null, 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
   abbrDayNames: ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'],
+  translations: {
+    'All Day': 'Весь день',
+    'No Title': 'Без названия'
+  }
 }
 
 function getUrlParameter(name) {
@@ -283,37 +289,280 @@ function updateUrl() {
 function startTimeUpdater() {
     setInterval(function() {
         var now = new Date();
-        var minutes = now.getHours() * calendar.refreshPagePeriodSeconds + now.getMinutes();
+        var minutes = now.getHours() * 60 + now.getMinutes();
         var currentTimeLine = document.getElementsByClassName('current-time-line')[0];
 
         if (currentTimeLine) {
             currentTimeLine.style.top = minutes + 'px';
         }
-    }, calendar.refreshPagePeriodSeconds * 1000);
+    }, 60000); // Update every minute
 }
 
 function calendarPrev() {
     var date = new Date(calendar.currentDate);
-    date.setDate(date.getDate() - calendar.totalDays)
+    date.setDate(date.getDate() - calendar.totalDays);
     calendar.currentDate = date;
 
     updateUrl();
     renderCalendar();
+    loadEventsForCurrentWeek();
 }
 
 function calendarNext() {
-  var date = new Date(calendar.currentDate);
-  date.setDate(date.getDate() + calendar.totalDays)
-  calendar.currentDate = date;
+    var date = new Date(calendar.currentDate);
+    date.setDate(date.getDate() + calendar.totalDays);
+    calendar.currentDate = date;
 
     updateUrl();
     renderCalendar();
+    loadEventsForCurrentWeek();
 }
 
 function calendarToday() {
     calendar.currentDate = new Date();
     updateUrl();
     renderCalendar();
+    loadEventsForCurrentWeek();
+}
+
+// ES3-compatible AJAX function
+function createXMLHttpRequest() {
+    if (window.XMLHttpRequest) {
+        return new XMLHttpRequest();
+    } else if (window.ActiveXObject) {
+        // For older IE versions
+        try {
+            return new ActiveXObject('Microsoft.XMLHTTP');
+        } catch (e) {
+            return null;
+        }
+    }
+    return null;
+}
+
+function loadEvents(startDate, endDate, callback) {
+    var xhr = createXMLHttpRequest();
+    if (!xhr) {
+        if (callback) callback(null, 'AJAX not supported');
+        return;
+    }
+    
+    var url = '/events?start_date=' + formatDate(startDate) + '&end_date=' + formatDate(endDate);
+    
+    xhr.open('GET', url, true);
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4) {
+            if (xhr.status === 200) {
+                try {
+                    var data = JSON.parse(xhr.responseText);
+                    if (callback) callback(data, null);
+                } catch (e) {
+                    if (callback) callback(null, 'Invalid JSON response');
+                }
+            } else {
+                if (callback) callback(null, 'HTTP error: ' + xhr.status);
+            }
+        }
+    };
+    xhr.send();
+}
+
+function loadEventsForCurrentWeek() {
+    var weekDates = getWeekDates();
+    var startDate = weekDates[0];
+    var endDate = weekDates[weekDates.length - 1];
+    
+    loadEvents(startDate, endDate, function(data, error) {
+        if (error) {
+            // Show error in footer or ignore silently
+            return;
+        }
+        
+        if (data && data.events) {
+            calendar.events = data.events;
+            calendar.eventsLoaded = true;
+            renderCalendarWithEvents();
+        }
+    });
+}
+
+function renderCalendarWithEvents() {
+    var weekDates = getWeekDates();
+    var container = document.getElementsByClassName('calendar-container')[0];
+
+    if (!container) {
+        var containers = document.getElementsByTagName('div');
+        for (var i = 0; i < containers.length; i++) {
+            if (containers[i].className === 'calendar-container') {
+                container = containers[i];
+                break;
+            }
+        }
+    }
+
+    if (container) {
+        container.innerHTML = generateHeader(weekDates) +
+                             generateCalendarHeader(weekDates) +
+                             generateCalendarBodyWithEvents(weekDates) +
+                             generateFooter();
+    }
+
+    // Auto-scroll to current time if today is visible
+    if (hasToday(weekDates)) {
+        var currentHour = new Date().getHours();
+        var scrollTop = Math.max(0, (currentHour - 5) * 60) + 70;
+        setTimeout(function() {
+            window.scrollTo(0, scrollTop);
+        }, 300);
+    }
+}
+
+function generateCalendarBodyWithEvents(weekDates) {
+    var dayColumns = '';
+    for (var i = 0; i < weekDates.length; i++) {
+        dayColumns += generateDayColumnWithEvents(weekDates[i]);
+    }
+
+    return formatTemplate(
+        'calendarBodyWrapper',
+        {timeColumn: generateTimeColumn(), dayColumns: dayColumns}
+    );
+}
+
+function generateDayColumnWithEvents(date) {
+    var today = new Date();
+    var currentTimeIndicator = isToday(date) ?
+        '<div class="current-time-line" style="top: ' + (today.getHours() * 60 + today.getMinutes()) + 'px;"></div>' : '';
+
+    var hourGrid = '';
+    for (var hour = 0; hour <= 23; hour++) {
+        hourGrid += '<div class="hour-line"><div class="half-hour-line"></div></div>';
+    }
+    
+    // Add events for this date
+    var eventsHtml = generateEventsForDate(date);
+
+    return formatTemplate(
+        'dayColumn',
+        {hourGrid: hourGrid, currentTimeIndicator: currentTimeIndicator + eventsHtml}
+    );
+}
+
+function generateEventsForDate(date) {
+    var dateKey = formatDate(date);
+    var dayEvents = calendar.events[dateKey] || [];
+    
+    if (dayEvents.length === 0) {
+        return '';
+    }
+    
+    var allDayEvents = [];
+    var timedEvents = [];
+    
+    for (var i = 0; i < dayEvents.length; i++) {
+        if (dayEvents[i].all_day) {
+            allDayEvents.push(dayEvents[i]);
+        } else {
+            timedEvents.push(dayEvents[i]);
+        }
+    }
+    
+    var eventsHtml = '';
+    
+    // Render all-day events
+    for (var i = 0; i < allDayEvents.length; i++) {
+        eventsHtml += generateAllDayEvent(allDayEvents[i], i);
+    }
+    
+    // Render timed events
+    for (var i = 0; i < timedEvents.length; i++) {
+        eventsHtml += generateTimedEvent(timedEvents[i]);
+    }
+    
+    return eventsHtml;
+}
+
+function generateAllDayEvent(event, index) {
+    var isPast = isEventPast(event);
+    var pastClass = isPast ? ' past-event' : '';
+    
+    return '<div class="event all-day-event' + pastClass + '" style="top: ' + (index * 22) + 'px;">' +
+               '<div class="event-title">' + (event.summary || calendar.translations['No Title']) + '</div>' +
+               (event.location ? '<div class="event-location">📍 ' + event.location + '</div>' : '') +
+           '</div>';
+}
+
+function generateTimedEvent(event) {
+    var isPast = isEventPast(event);
+    var pastClass = isPast ? ' past-event' : '';
+    
+    var topPos = getEventTopPosition(event);
+    var height = getEventHeight(event);
+    
+    return '<div class="event' + pastClass + '" style="top: ' + topPos + 'px; height: ' + height + 'px; left: 2%; right: 2%;">' +
+               '<div class="event-title">' + (event.summary || calendar.translations['No Title']) + '</div>' +
+               '<div class="event-time">' + formatEventTime(event) + '</div>' +
+               (event.location ? '<div class="event-location">📍 ' + event.location + '</div>' : '') +
+           '</div>';
+}
+
+function isEventPast(event) {
+    var now = new Date();
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    if (event.all_day) {
+        var eventDate = parseDate(event.start.split('T')[0]);
+        return eventDate < today;
+    } else {
+        var eventEnd = new Date(event.end);
+        return eventEnd < now;
+    }
+}
+
+function getEventTopPosition(event) {
+    if (event.all_day) return 0;
+    
+    try {
+        var startTime = new Date(event.start);
+        return startTime.getHours() * 60 + startTime.getMinutes();
+    } catch (e) {
+        return 0;
+    }
+}
+
+function getEventHeight(event) {
+    if (event.all_day) return 20;
+    
+    try {
+        var startTime = new Date(event.start);
+        var endTime = new Date(event.end);
+        var startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
+        var endMinutes = endTime.getHours() * 60 + endTime.getMinutes();
+        var duration = endMinutes - startMinutes;
+        return Math.max(duration, 20);
+    } catch (e) {
+        return 20;
+    }
+}
+
+function formatEventTime(event) {
+    if (event.all_day) return calendar.translations['All Day'];
+    
+    try {
+        var startTime = new Date(event.start);
+        var endTime = new Date(event.end);
+        var startStr = ('0' + startTime.getHours()).slice(-2) + ':' + ('0' + startTime.getMinutes()).slice(-2);
+        var endStr = ('0' + endTime.getHours()).slice(-2) + ':' + ('0' + endTime.getMinutes()).slice(-2);
+        return startStr + ' - ' + endStr;
+    } catch (e) {
+        return calendar.translations['All Day'];
+    }
+}
+
+function startPeriodicEventUpdates() {
+    setInterval(function() {
+        loadEventsForCurrentWeek();
+    }, calendar.refreshPagePeriodSeconds * 1000);
 }
 
 function initCalendar() {
@@ -327,7 +576,9 @@ function initCalendar() {
     }
 
     renderCalendar();
+    loadEventsForCurrentWeek();
     startTimeUpdater();
+    startPeriodicEventUpdates();
 }
 
 function formatTemplate(templateName, variables) {
