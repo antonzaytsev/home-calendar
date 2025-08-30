@@ -13,9 +13,9 @@ PAGE_REFRESH_MINUTES = 1
 WEBCAL_FILE_PATH = '/app/webcal.ics'
 WEBCAL_JSON_PATH = '/app/webcal_events.json'
 
-DAYS_IN_PAST = 1      # Number of past days to show before today
-DAYS_IN_FUTURE = 2    # Number of future days to show after today
-TOTAL_DAYS = DAYS_IN_PAST + 1 + DAYS_IN_FUTURE  # Total days (past + today + future) - calculated automatically
+DAYS_IN_PAST = 1
+DAYS_IN_FUTURE = 2
+TOTAL_DAYS = DAYS_IN_PAST + 1 + DAYS_IN_FUTURE
 
 Encoding.default_external = Encoding::UTF_8
 Encoding.default_internal = Encoding::UTF_8
@@ -231,38 +231,6 @@ def format_event_time(event)
 end
 
 get '/' do
-  target_date = nil
-  if params[:date]
-    begin
-      target_date = Date.parse(params[:date])
-    rescue => e
-      target_date = nil
-    end
-  end
-
-  @error = nil
-  @week_events = {}
-  @week_dates = get_week_dates(target_date)
-
-  all_events = read_parsed_events_from_json
-  if all_events.nil?
-    all_events = read_webcal_data_from_file_fallback
-  end
-
-  if all_events && !all_events.empty?
-    @week_events = filter_events_for_week(all_events, @week_dates)
-  else
-    @error = t("Failed to read calendar data from file. Check if fetcher service is running.")
-  end
-
-  current_reference_date = @week_dates[DAYS_IN_PAST]
-  @prev_week_date = (current_reference_date - TOTAL_DAYS).strftime('%Y-%m-%d')
-  @next_week_date = (current_reference_date + TOTAL_DAYS).strftime('%Y-%m-%d')
-
-  @today = Date.today
-  @now = Time.now.getlocal("+03:00")
-  @current_time_minutes = @now.hour * 60 + @now.min
-  @today_index = DAYS_IN_PAST
   erb :calendar
 end
 
