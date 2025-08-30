@@ -1,4 +1,4 @@
-const TEMPLATES = {
+var TEMPLATES = {
   calendarBodyWrapper:
     '<div class="calendar-body-wrapper">' +
       '<div class="calendar-body">' +
@@ -346,9 +346,9 @@ function loadEvents(startDate, endDate, callback) {
         if (callback) callback(null, 'AJAX not supported');
         return;
     }
-    
+
     var url = '/events?start_date=' + formatDate(startDate) + '&end_date=' + formatDate(endDate);
-    
+
     xhr.open('GET', url, true);
     xhr.onreadystatechange = function() {
         if (xhr.readyState === 4) {
@@ -371,13 +371,13 @@ function loadEventsForCurrentWeek() {
     var weekDates = getWeekDates();
     var startDate = weekDates[0];
     var endDate = weekDates[weekDates.length - 1];
-    
+
     loadEvents(startDate, endDate, function(data, error) {
         if (error) {
             // Show error in footer or ignore silently
             return;
         }
-        
+
         if (data && data.events) {
             calendar.events = data.events;
             calendar.eventsLoaded = true;
@@ -438,7 +438,7 @@ function generateDayColumnWithEvents(date) {
     for (var hour = 0; hour <= 23; hour++) {
         hourGrid += '<div class="hour-line"><div class="half-hour-line"></div></div>';
     }
-    
+
     // Add events for this date
     var eventsHtml = generateEventsForDate(date);
 
@@ -451,14 +451,14 @@ function generateDayColumnWithEvents(date) {
 function generateEventsForDate(date) {
     var dateKey = formatDate(date);
     var dayEvents = calendar.events[dateKey] || [];
-    
+
     if (dayEvents.length === 0) {
         return '';
     }
-    
+
     var allDayEvents = [];
     var timedEvents = [];
-    
+
     for (var i = 0; i < dayEvents.length; i++) {
         if (dayEvents[i].all_day) {
             allDayEvents.push(dayEvents[i]);
@@ -466,26 +466,26 @@ function generateEventsForDate(date) {
             timedEvents.push(dayEvents[i]);
         }
     }
-    
+
     var eventsHtml = '';
-    
+
     // Render all-day events
     for (var i = 0; i < allDayEvents.length; i++) {
         eventsHtml += generateAllDayEvent(allDayEvents[i], i);
     }
-    
+
     // Render timed events
     for (var i = 0; i < timedEvents.length; i++) {
         eventsHtml += generateTimedEvent(timedEvents[i]);
     }
-    
+
     return eventsHtml;
 }
 
 function generateAllDayEvent(event, index) {
     var isPast = isEventPast(event);
     var pastClass = isPast ? ' past-event' : '';
-    
+
     return '<div class="event all-day-event' + pastClass + '" style="top: ' + (index * 22) + 'px;">' +
                '<div class="event-title">' + (event.summary || calendar.translations['No Title']) + '</div>' +
                (event.location ? '<div class="event-location">📍 ' + event.location + '</div>' : '') +
@@ -495,10 +495,10 @@ function generateAllDayEvent(event, index) {
 function generateTimedEvent(event) {
     var isPast = isEventPast(event);
     var pastClass = isPast ? ' past-event' : '';
-    
+
     var topPos = getEventTopPosition(event);
     var height = getEventHeight(event);
-    
+
     return '<div class="event' + pastClass + '" style="top: ' + topPos + 'px; height: ' + height + 'px; left: 2%; right: 2%;">' +
                '<div class="event-title">' + (event.summary || calendar.translations['No Title']) + '</div>' +
                '<div class="event-time">' + formatEventTime(event) + '</div>' +
@@ -509,7 +509,7 @@ function generateTimedEvent(event) {
 function isEventPast(event) {
     var now = new Date();
     var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
+
     if (event.all_day) {
         var eventDate = parseDate(event.start.split('T')[0]);
         return eventDate < today;
@@ -521,7 +521,7 @@ function isEventPast(event) {
 
 function getEventTopPosition(event) {
     if (event.all_day) return 0;
-    
+
     try {
         var startTime = new Date(event.start);
         return startTime.getHours() * 60 + startTime.getMinutes();
@@ -532,7 +532,7 @@ function getEventTopPosition(event) {
 
 function getEventHeight(event) {
     if (event.all_day) return 20;
-    
+
     try {
         var startTime = new Date(event.start);
         var endTime = new Date(event.end);
@@ -547,7 +547,7 @@ function getEventHeight(event) {
 
 function formatEventTime(event) {
     if (event.all_day) return calendar.translations['All Day'];
-    
+
     try {
         var startTime = new Date(event.start);
         var endTime = new Date(event.end);
