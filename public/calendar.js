@@ -36,6 +36,7 @@ var calendar = {
   refreshPagePeriodSeconds: 60,
   events: {},
   eventsLoaded: false,
+  lastKnownDate: null, // Track the last known current date for day change detection
 
   // Russian translations
   monthNames: [null, 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
@@ -662,9 +663,37 @@ function formatEventTime(event) {
     }
 }
 
+function checkForDayChange() {
+    var today = new Date();
+    var todayDateString = formatDate(today);
+
+    if (!calendar.lastKnownDate) {
+        calendar.lastKnownDate = todayDateString;
+        return false;
+    }
+
+    if (calendar.lastKnownDate !== todayDateString) {
+        calendar.lastKnownDate = todayDateString;
+        return true;
+    }
+
+    return false;
+}
+
+function handleDayChange() {
+    calendar.currentDate = new Date();
+    updateUrl();
+    renderCalendar();
+    loadEventsForCurrentWeek();
+}
+
 function startPeriodicEventUpdates() {
     setInterval(function() {
-        loadEventsForCurrentWeek();
+        if (checkForDayChange()) {
+            handleDayChange();
+        } else {
+            loadEventsForCurrentWeek();
+        }
     }, calendar.refreshPagePeriodSeconds * 1000);
 }
 
@@ -677,6 +706,9 @@ function initCalendar() {
             calendar.currentDate = new Date();
         }
     }
+
+    var today = new Date();
+    calendar.lastKnownDate = formatDate(today);
 
     renderCalendar();
     loadEventsForCurrentWeek();
@@ -697,13 +729,11 @@ function formatTemplate(templateName, variables) {
   return html
 }
 
-// Initialize calendar when DOM is loaded
 if (document.addEventListener) {
     document.addEventListener('DOMContentLoaded', function() {
         initCalendar();
     });
 } else {
-    // Fallback for very old browsers
     window.onload = function() {
         initCalendar();
     };
