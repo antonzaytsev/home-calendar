@@ -104,17 +104,17 @@
         </div>
 
         <div class="footer">
-            Последнее обновление: <%= @now.strftime('%d.%m.%Y %H:%M') %> | Автообновление каждые 10 минут
+            Последнее обновление: <%= @now.strftime('%d.%m.%Y %H:%M') %> | Автообновление каждые <%= PAGE_REFRESH_MINUTES %> минут
         </div>
     </div>
 
-    <script src="/calendar.js"></script>
     <script>
-        setCalendarConfig({
-            currentTimeMinutes: <%= @current_time_minutes %>,
-            pageRefreshMinutes: <%= PAGE_REFRESH_MINUTES %>,
-            isTodayVisible: <%= @week_dates.include?(@today) %>
-        });
+      window.config = {
+        currentTimeMinutes: <%= @current_time_minutes || 0 %>,
+        pageRefreshMinutes: <%= PAGE_REFRESH_MINUTES || 1 %>,
+        isTodayVisible: <%= @week_dates.include?(@today) %>
+      }
     </script>
+    <script src="/calendar.js"></script>
 </body>
 </html>
