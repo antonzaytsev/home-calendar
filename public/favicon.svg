@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Calendar base -->
+  <rect x="4" y="6" width="24" height="22" rx="2" ry="2" fill="#ffffff" stroke="#2c3e50" stroke-width="2"/>
+  
+  <!-- Calendar header -->
+  <rect x="4" y="6" width="24" height="6" rx="2" ry="2" fill="#3498db"/>
+  
+  <!-- Calendar rings -->
+  <circle cx="10" cy="4" r="1.5" fill="#2c3e50"/>
+  <circle cx="22" cy="4" r="1.5" fill="#2c3e50"/>
+  <rect x="9" y="2" width="2" height="6" fill="#2c3e50"/>
+  <rect x="21" y="2" width="2" height="6" fill="#2c3e50"/>
+  
+  <!-- Calendar grid -->
+  <line x1="4" y1="16" x2="28" y2="16" stroke="#e8e8e8" stroke-width="1"/>
+  <line x1="4" y1="20" x2="28" y2="20" stroke="#e8e8e8" stroke-width="1"/>
+  <line x1="4" y1="24" x2="28" y2="24" stroke="#e8e8e8" stroke-width="1"/>
+  
+  <line x1="10" y1="12" x2="10" y2="28" stroke="#e8e8e8" stroke-width="1"/>
+  <line x1="16" y1="12" x2="16" y2="28" stroke="#e8e8e8" stroke-width="1"/>
+  <line x1="22" y1="12" x2="22" y2="28" stroke="#e8e8e8" stroke-width="1"/>
+  
+  <!-- Today highlight -->
+  <rect x="16" y="16" width="6" height="4" fill="#e74c3c" rx="1"/>
+  
+  <!-- Date number -->
+  <text x="19" y="19.5" font-family="Arial, sans-serif" font-size="3" font-weight="bold" text-anchor="middle" fill="#ffffff">15</text>
+</svg>
