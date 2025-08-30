@@ -12,11 +12,18 @@ var TEMPLATES = {
                '{currentTimeIndicator}' +
              '</div>',
   timeColumn: '<div class="time-column">{timeSlots}</div>',
-  calendarHeader: '<div class="calendar-header">' +
-    '<div class="header-row">' +
-    '<div class="time-header"></div>' +
-    '{dayHeaders}' +
-    '</div>' +
+  calendarHeader:
+    '<div class="calendar-header">' +
+      '<div class="header-row">' +
+        '<div class="time-header"></div>' +
+        '{dayHeaders}' +
+      '</div>' +
+    '</div>',
+  event:
+    '<div class="event{pastClass}" style="top: {topPos}px; height: {height}px; left: {leftPercent}%; width: {widthPercent}%;">' +
+      '<div class="event-title">{title}</div>' +
+      '<div class="event-time">{timeString}</div>' +
+      '<div class="event-location{locationClass}">📍 {location}</div>' +
     '</div>',
   footer: '<div class="footer">Последнее обновление: {lastUpdate} | Автообновление каждые {updateEveryMinutes} минут</div>',
 }
@@ -474,9 +481,12 @@ function generateEventsForDate(date) {
         eventsHtml += generateAllDayEvent(allDayEvents[i], i);
     }
 
-    // Render timed events
-    for (var i = 0; i < timedEvents.length; i++) {
-        eventsHtml += generateTimedEvent(timedEvents[i]);
+    // Calculate layout for overlapping timed events
+    var eventsWithLayout = calculateEventsLayout(timedEvents);
+
+    // Render timed events with layout
+    for (var i = 0; i < eventsWithLayout.length; i++) {
+        eventsHtml += generateTimedEventWithLayout(eventsWithLayout[i]);
     }
 
     return eventsHtml;
@@ -492,18 +502,111 @@ function generateAllDayEvent(event, index) {
            '</div>';
 }
 
-function generateTimedEvent(event) {
+function calculateEventsLayout(timedEvents) {
+  const widthPercent = 98
+
+    if (timedEvents.length === 0) {
+        return [];
+    }
+
+    // Sort events by start time
+    var sortedEvents = timedEvents.slice().sort(function(a, b) {
+        var startA = new Date(a.start);
+        var startB = new Date(b.start);
+        return startA.getTime() - startB.getTime();
+    });
+
+    var eventsWithLayout = [];
+    var columns = [];
+
+    for (var i = 0; i < sortedEvents.length; i++) {
+        var event = sortedEvents[i];
+
+        var columnIndex = -1;
+        for (var j = 0; j < columns.length; j++) {
+            var canFit = true;
+            for (var k = 0; k < columns[j].length; k++) {
+                var existingEvent = columns[j][k];
+                if (eventsOverlap(event, existingEvent)) {
+                    canFit = false;
+                    break;
+                }
+            }
+            if (canFit) {
+                columnIndex = j;
+                break;
+            }
+        }
+
+        if (columnIndex === -1) {
+            columns.push([]);
+            columnIndex = columns.length - 1;
+        }
+
+        columns[columnIndex].push(event);
+
+        var totalColumns = columns.length;
+        var width = (widthPercent / totalColumns);
+        var left = 1 + (columnIndex * (widthPercent / totalColumns));
+
+        eventsWithLayout.push({
+            event: event,
+            layout: {
+                width: width,
+                left: left,
+                column: columnIndex,
+                totalColumns: totalColumns
+            }
+        });
+    }
+
+    var finalColumnCount = columns.length;
+    for (var i = 0; i < eventsWithLayout.length; i++) {
+        var layout = eventsWithLayout[i].layout;
+        layout.width = widthPercent / finalColumnCount;
+        layout.left = 1 + (layout.column * (widthPercent / finalColumnCount));
+        layout.totalColumns = finalColumnCount;
+    }
+
+    return eventsWithLayout;
+}
+
+function eventsOverlap(event1, event2) {
+    var start1 = new Date(event1.start);
+    var end1 = new Date(event1.end);
+    var start2 = new Date(event2.start);
+    var end2 = new Date(event2.end);
+
+    return start1 < end2 && start2 < end1;
+}
+
+function generateTimedEventWithLayout(eventWithLayout) {
+    var event = eventWithLayout.event;
+    var layout = eventWithLayout.layout;
     var isPast = isEventPast(event);
     var pastClass = isPast ? ' past-event' : '';
 
-    var topPos = getEventTopPosition(event);
-    var height = getEventHeight(event);
+    var topPos = getEventTopPosition(event) + 1;
+    var height = getEventHeight(event) - 2;
 
-    return '<div class="event' + pastClass + '" style="top: ' + topPos + 'px; height: ' + height + 'px; left: 2%; right: 2%;">' +
-               '<div class="event-title">' + (event.summary || calendar.translations['No Title']) + '</div>' +
-               '<div class="event-time">' + formatEventTime(event) + '</div>' +
-               (event.location ? '<div class="event-location">📍 ' + event.location + '</div>' : '') +
-           '</div>';
+    var leftPercent = layout.left;
+    var widthPercent = layout.width;
+
+    return formatTemplate(
+      'event',
+      {
+        pastClass: pastClass,
+        topPos: topPos,
+        height: height,
+        leftPercent: leftPercent,
+        widthPercent: widthPercent,
+        title: event.summary || calendar.translations['No Title'],
+        timeString: formatEventTime(event),
+        // location: event.location,
+        // locationClass: event.location ? '' : ' hide'
+        locationClass: ' hide'
+      }
+    )
 }
 
 function isEventPast(event) {
