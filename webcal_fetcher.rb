@@ -98,6 +98,23 @@ def parse_calendar_events(ical_content, logger)
         # Extract UID for uniqueness
         event['uid'] = (component.uid.to_s || '').dup.force_encoding('UTF-8')
 
+        # Extract RRULE for recurring events
+        if component.rrule && !component.rrule.empty?
+          rrule_object = component.rrule.first
+
+          rrule_parts = []
+          rrule_parts << "FREQ=#{rrule_object.frequency}" if rrule_object.frequency
+          rrule_parts << "UNTIL=#{rrule_object.until}" if rrule_object.until
+          rrule_parts << "COUNT=#{rrule_object.count}" if rrule_object.count
+          rrule_parts << "INTERVAL=#{rrule_object.interval}" if rrule_object.interval && rrule_object.interval != 1
+          rrule_parts << "BYDAY=#{Array(rrule_object.by_day).join(',')}" if rrule_object.by_day && !rrule_object.by_day.empty?
+          rrule_parts << "BYMONTHDAY=#{Array(rrule_object.by_month_day).join(',')}" if rrule_object.by_month_day && !rrule_object.by_month_day.empty?
+          rrule_parts << "BYMONTH=#{Array(rrule_object.by_month).join(',')}" if rrule_object.by_month && !rrule_object.by_month.empty?
+          rrule_parts << "WKST=#{rrule_object.week_start}" if rrule_object.week_start
+
+          event['rrule'] = rrule_parts.join(';') unless rrule_parts.empty?
+        end
+
         if component.exdate && !component.exdate.empty?
           event['exdate'] = []
           Array(component.exdate).each do |exdate_value|

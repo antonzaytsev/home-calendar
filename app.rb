@@ -46,56 +46,59 @@ def logger
 end
 
 def read_parsed_events_from_json
-  begin
-    if File.exist?(WEBCAL_JSON_PATH)
-      json_content = File.read(WEBCAL_JSON_PATH, encoding: 'UTF-8')
-      parsed_data = JSON.parse(json_content)
-      events = parsed_data['events'] || []
-
-      converted_events = []
-      events.each do |json_event|
-        event = {
-          'uid' => json_event['uid'] || '',
-          'summary' => json_event['summary'] || t('No Title'),
-          'description' => json_event['description'] || '',
-          'location' => json_event['location'] || '',
-          'all_day' => json_event['all_day'] || false
-        }
-
-        if json_event['exdate']
-          event['exdate'] = json_event['exdate']
-        end
-
-        begin
-          if json_event['start']
-            if event['all_day']
-              event['start'] = Date.parse(json_event['start'])
-              event['end'] = Date.parse(json_event['end'])
-            else
-              event['start'] = Time.parse(json_event['start'])
-              event['end'] = Time.parse(json_event['end'])
-            end
-          else
-            next
-          end
-        rescue => e
-          logger.warn("Error parsing event dates for #{event['summary']}: #{e.message}")
-          next
-        end
-
-        converted_events << event
-      end
-
-      logger.info("Successfully read #{converted_events.length} events from JSON cache")
-      return converted_events
-    else
-      logger.warn("JSON cache file not found at #{WEBCAL_JSON_PATH}, falling back to ical parsing")
-      return nil
-    end
-  rescue => e
-    logger.error("Error reading JSON cache: #{e.message}, falling back to ical parsing")
-    return nil
+  unless File.exist?(WEBCAL_JSON_PATH)
+    logger.warn("JSON cache file not found at #{WEBCAL_JSON_PATH}, falling back to ical parsing")
+    return
   end
+
+  json_content = File.read(WEBCAL_JSON_PATH, encoding: 'UTF-8')
+  parsed_data = JSON.parse(json_content)
+  events = parsed_data['events'] || []
+
+  converted_events = []
+  events.each do |json_event|
+    event = {
+      'uid' => json_event['uid'] || '',
+      'summary' => json_event['summary'] || t('No Title'),
+      'description' => json_event['description'] || '',
+      'location' => json_event['location'] || '',
+      'all_day' => json_event['all_day'] || false
+    }
+
+    if json_event['rrule']
+      event['rrule'] = json_event['rrule']
+    end
+
+    if json_event['exdate']
+      event['exdate'] = json_event['exdate']
+    end
+
+    begin
+      if json_event['start']
+        if event['all_day']
+          event['start'] = Date.parse(json_event['start'])
+          event['end'] = Date.parse(json_event['end'])
+        else
+          event['start'] = Time.parse(json_event['start'])
+          event['end'] = Time.parse(json_event['end'])
+        end
+      else
+        next
+      end
+    rescue => e
+      logger.warn("Error parsing event dates for #{event['summary']}: #{e.message}")
+      next
+    end
+
+    converted_events << event
+  end
+
+  logger.info("Successfully read #{converted_events.length} events from JSON cache")
+  converted_events
+
+rescue => e
+  logger.error("Error reading JSON cache: #{e.message}, falling back to ical parsing")
+  return
 end
 
 def filter_events_for_week(events, week_dates)
@@ -149,6 +152,313 @@ def format_event_time(event)
   end
 end
 
+def parse_rrule(rrule_string)
+  rrule = {}
+  return rrule if rrule_string.nil? || rrule_string.empty?
+
+  parts = rrule_string.split(';')
+  parts.each do |part|
+    key, value = part.split('=', 2)
+    next unless key && value
+    rrule[key.upcase] = value
+  end
+  rrule
+end
+
+def parse_byday(byday_string)
+  """Parse BYDAY string and return array of Ruby wday integers (0=Sunday, 1=Monday, etc.)"""
+  return [] if byday_string.nil? || byday_string.empty?
+  
+  day_map = {
+    'SU' => 0, 'MO' => 1, 'TU' => 2, 'WE' => 3, 
+    'TH' => 4, 'FR' => 5, 'SA' => 6
+  }
+  
+  days = byday_string.split(',').map(&:strip).map(&:upcase)
+  days.map { |day| day_map[day] }.compact
+end
+
+def expand_recurring_event(event, start_date, end_date)
+  return [event] unless event['rrule']
+
+  rrule = parse_rrule(event['rrule'])
+  return [event] if rrule.empty?
+
+  occurrences = []
+  exdates = []
+
+  # Parse exdate list if present
+  if event['exdate']
+    exdates = event['exdate'].map { |date_str|
+      begin
+        if event['all_day']
+          Date.parse(date_str.split('T')[0])
+        else
+          Time.parse(date_str)
+        end
+      rescue
+        nil
+      end
+    }.compact
+  end
+
+  # Get the original event start time
+  original_start = event['start']
+  original_end = event['end']
+
+  # Calculate duration
+  if event['all_day']
+    duration_days = (original_end - original_start).to_i
+  else
+    duration_seconds = original_end - original_start
+  end
+
+  freq = rrule['FREQ']
+  until_date = nil
+  count = nil
+  byday_wdays = []
+
+  if rrule['UNTIL']
+    begin
+      until_date = Time.parse(rrule['UNTIL'])
+    rescue
+      until_date = nil
+    end
+  end
+
+  if rrule['COUNT']
+    count = rrule['COUNT'].to_i
+  end
+
+  # Parse BYDAY for weekly frequency
+  if freq == 'WEEKLY' && rrule['BYDAY']
+    byday_wdays = parse_byday(rrule['BYDAY'])
+  end
+
+  current_date = original_start
+  occurrence_count = 0
+
+  # For weekly BYDAY events, adjust starting date to first valid occurrence
+  if freq == 'WEEKLY' && !byday_wdays.empty?
+    original_wday = event['all_day'] ? original_start.wday : original_start.to_date.wday
+    
+    # If original start date is not on a valid weekday, find the next valid one
+    unless byday_wdays.include?(original_wday)
+      search_date = original_start
+      
+      # Look ahead up to 7 days to find first valid weekday
+      7.times do
+        if event['all_day']
+          search_date += 1
+          search_wday = search_date.wday
+        else
+          search_date += 24 * 60 * 60
+          search_wday = search_date.to_date.wday
+        end
+        
+        if byday_wdays.include?(search_wday)
+          current_date = search_date
+          break
+        end
+      end
+    end
+  end
+
+  # Limit iterations to prevent infinite loops
+  max_iterations = 1000
+  iteration_count = 0
+
+  while iteration_count < max_iterations
+    iteration_count += 1
+
+    # Break if we've reached the count limit
+    break if count && occurrence_count >= count
+
+    # Break if we've passed the until date
+    if until_date
+      check_date = event['all_day'] ? current_date : current_date
+      break if check_date > until_date
+    end
+
+    # Break if we're past our search range
+    search_date = event['all_day'] ? current_date : current_date.to_date
+    break if search_date > end_date
+
+    # For weekly BYDAY events, check if current day is valid
+    if freq == 'WEEKLY' && !byday_wdays.empty?
+      current_wday = event['all_day'] ? current_date.wday : current_date.to_date.wday
+      if !byday_wdays.include?(current_wday)
+        # Skip to next day and continue
+        if event['all_day']
+          current_date += 1
+        else
+          current_date += 24 * 60 * 60
+        end
+        next
+      end
+    end
+
+    # Check if this occurrence is within our range and not excluded
+    if search_date >= start_date && search_date <= end_date
+      # Check if this date is excluded
+      excluded = false
+      exdates.each do |exdate|
+        if event['all_day']
+          excluded = (current_date == exdate)
+        else
+          # For timed events, check if the start date matches
+          excluded = (current_date.to_date == exdate.to_date)
+        end
+        break if excluded
+      end
+
+      unless excluded
+        # Create occurrence
+        occurrence = event.dup
+        occurrence['start'] = current_date
+
+        if event['all_day']
+          occurrence['end'] = current_date + duration_days
+        else
+          occurrence['end'] = current_date + duration_seconds
+        end
+
+        # Generate unique UID for this occurrence
+        if event['all_day']
+          occurrence['uid'] = "#{event['uid']}_#{current_date.strftime('%Y%m%d')}"
+        else
+          occurrence['uid'] = "#{event['uid']}_#{current_date.strftime('%Y%m%dT%H%M%S')}"
+        end
+
+        # Remove rrule from occurrence (it's not a recurring event anymore)
+        occurrence.delete('rrule')
+
+        occurrences << occurrence
+        occurrence_count += 1
+      end
+    end
+
+    # Calculate next occurrence based on frequency
+    case freq
+    when 'DAILY'
+      if event['all_day']
+        current_date += 1
+      else
+        current_date += 24 * 60 * 60 # Add 1 day in seconds
+      end
+    when 'WEEKLY'
+      if !byday_wdays.empty?
+        # For BYDAY weekly events, just move to next day - the loop logic will handle finding valid weekdays
+        if event['all_day']
+          current_date += 1
+        else
+          current_date += 24 * 60 * 60 # Add 1 day in seconds
+        end
+      else
+        # Standard weekly recurrence (every 7 days)
+        if event['all_day']
+          current_date += 7
+        else
+          current_date += 7 * 24 * 60 * 60 # Add 7 days in seconds
+        end
+      end
+    when 'MONTHLY'
+      if event['all_day']
+        current_date = Date.new(current_date.year, current_date.month, current_date.day) >> 1
+      else
+        # Add 1 month, keeping the same time
+        date_part = current_date.to_date >> 1
+        current_date = Time.new(date_part.year, date_part.month, date_part.day,
+                               current_date.hour, current_date.min, current_date.sec,
+                               current_date.zone)
+      end
+    when 'YEARLY'
+      if event['all_day']
+        current_date = Date.new(current_date.year + 1, current_date.month, current_date.day)
+      else
+        # Add 1 year, keeping the same time
+        current_date = Time.new(current_date.year + 1, current_date.month, current_date.day,
+                               current_date.hour, current_date.min, current_date.sec,
+                               current_date.zone)
+      end
+    else
+      # Unknown frequency, break to prevent infinite loop
+      break
+    end
+
+    # Safety check: if we're way past our search range, break
+    search_date = event['all_day'] ? current_date : current_date.to_date
+    break if search_date > end_date + 365 # Stop if more than a year past range
+  end
+
+  occurrences
+end
+
+def filter_events_for_week_with_recurring(events, week_dates)
+  week_events = {}
+  week_dates.each { |date| week_events[date] = [] }
+
+  start_date = week_dates.first
+  end_date = week_dates.last
+
+  events.each do |event|
+    begin
+      if event['rrule']
+        # Expand recurring event
+        expanded_events = expand_recurring_event(event, start_date, end_date)
+        expanded_events.each do |expanded_event|
+          # Add expanded occurrence to appropriate date
+          if expanded_event['start'].is_a?(Icalendar::Values::DateTime) || expanded_event['start'].is_a?(Time)
+            event_start_date = expanded_event['start'].to_date
+          else
+            event_start_date = expanded_event['start']
+          end
+
+          if expanded_event['end'].is_a?(Icalendar::Values::DateTime) || expanded_event['end'].is_a?(Time)
+            event_end_date = expanded_event['end'].to_date
+          else
+            event_end_date = expanded_event['end']
+          end
+
+          # Check if event overlaps with any day in the week
+          week_dates.each do |date|
+            if event_start_date <= date && date <= event_end_date
+              week_events[date] << expanded_event
+              break # Event added, no need to check other days
+            end
+          end
+        end
+      else
+        # Handle non-recurring events (existing logic)
+        if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
+          event_start_date = event['start'].to_date
+        else
+          event_start_date = event['start']
+        end
+
+        if event['end'].is_a?(Icalendar::Values::DateTime) || event['end'].is_a?(Time)
+          event_end_date = event['end'].to_date
+        else
+          event_end_date = event['end']
+        end
+
+        # Check if event overlaps with any day in the week
+        week_dates.each do |date|
+          if event_start_date <= date && date <= event_end_date
+            week_events[date] << event
+            break # Event added, no need to check other days
+          end
+        end
+      end
+    rescue => e
+      logger.warn("Error processing event #{event['summary'] || 'Unknown'}: #{e}")
+      next
+    end
+  end
+
+  week_events
+end
+
 get '/' do
   erb :calendar
 end
@@ -172,7 +482,6 @@ get '/events' do
     halt 400, { error: 'Invalid date format. Use YYYY-MM-DD' }.to_json
   end
 
-  # Read events from JSON cache first, fallback to ical
   all_events = read_parsed_events_from_json
 
   if all_events.nil? || all_events.empty?
@@ -189,7 +498,7 @@ get '/events' do
     current_date = current_date + 1
   end
 
-  week_events = filter_events_for_week(all_events, week_dates)
+  week_events = filter_events_for_week_with_recurring(all_events, week_dates)
 
   json_events = {}
   week_events.each do |date, events|
@@ -204,6 +513,10 @@ get '/events' do
         start: event['start'].respond_to?(:iso8601) ? event['start'].iso8601 : event['start'].to_s,
         end: event['end'].respond_to?(:iso8601) ? event['end'].iso8601 : event['end'].to_s
       }
+
+      if event['rrule']
+        event_json[:rrule] = event['rrule']
+      end
 
       if event['exdate']
         event_json[:exdate] = event['exdate']
