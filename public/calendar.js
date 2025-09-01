@@ -562,11 +562,31 @@ function calculateEventsLayout(timedEvents) {
     }
 
     var finalColumnCount = columns.length;
+
     for (var i = 0; i < eventsWithLayout.length; i++) {
+        var currentEvent = eventsWithLayout[i].event;
+        var hasOverlaps = false;
+
+        for (var j = 0; j < sortedEvents.length; j++) {
+            if (sortedEvents[j] !== currentEvent && eventsOverlap(currentEvent, sortedEvents[j])) {
+                hasOverlaps = true;
+                break;
+            }
+        }
+
         var layout = eventsWithLayout[i].layout;
-        layout.width = widthPercent / finalColumnCount;
-        layout.left = 1 + (layout.column * (widthPercent / finalColumnCount));
-        layout.totalColumns = finalColumnCount;
+
+        if (hasOverlaps) {
+            layout.width = widthPercent / finalColumnCount;
+            layout.left = 1 + (layout.column * (widthPercent / finalColumnCount));
+            layout.totalColumns = finalColumnCount;
+            layout.hasOverlaps = true;
+        } else {
+            layout.width = null;
+            layout.left = null;
+            layout.totalColumns = 1;
+            layout.hasOverlaps = false;
+        }
     }
 
     return eventsWithLayout;
@@ -589,6 +609,14 @@ function generateTimedEventWithLayout(eventWithLayout) {
 
     var topPos = getEventTopPosition(event) + 1;
     var height = getEventHeight(event) - 2;
+
+    if (layout.width === null && layout.left === null) {
+        return '<div class="event' + pastClass + '" style="top: ' + topPos + 'px; height: ' + height + 'px;">' +
+               '<div class="event-title">' + (event.summary || calendar.translations['No Title']) + '</div>' +
+               '<div class="event-time">' + formatEventTime(event) + '</div>' +
+               '<div class="event-location hide">' + (event.location || '') + '</div>' +
+               '</div>';
+    }
 
     var leftPercent = layout.left;
     var widthPercent = layout.width;
