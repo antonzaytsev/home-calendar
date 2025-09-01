@@ -18,6 +18,12 @@ var TEMPLATES = {
         '<div class="time-header"></div>' +
         '{dayHeaders}' +
       '</div>' +
+      '{allDayRow}' +
+    '</div>',
+  allDayRow:
+    '<div class="all-day-row">' +
+      '<div class="all-day-label">Весь день</div>' +
+      '{allDayColumns}' +
     '</div>',
   event:
     '<div class="event{pastClass}" style="top: {topPos}px; height: {height}px; left: {leftPercent}%; width: {widthPercent}%;">' +
@@ -166,6 +172,9 @@ function generateHeader(weekDates) {
 
 function generateCalendarHeader(weekDates) {
     var dayHeaders = '';
+    var allDayColumns = '';
+    var hasAllDayEvents = false;
+
     for (var i = 0; i < weekDates.length; i++) {
         var date = weekDates[i];
         var todayClass = isToday(date) ? ' today' : '';
@@ -174,12 +183,28 @@ function generateCalendarHeader(weekDates) {
         dayHeaders += '<div class="day-header' + todayClass + weekendClass + '">' +
                         '<div class="day-name">' + calendar.abbrDayNames[date.getDay()].toUpperCase() + ' ' + date.getDate() + '</div>' +
                       '</div>';
+
+        // Generate all-day events column for this date
+        var allDayEventsHtml = '';
+        if (calendar.eventsLoaded) {
+            allDayEventsHtml = generateAllDayEventsForDate(date);
+            if (allDayEventsHtml !== '') {
+                hasAllDayEvents = true;
+            }
+        }
+        allDayColumns += '<div class="all-day-column' + todayClass + '">' + allDayEventsHtml + '</div>';
     }
 
-  return formatTemplate(
-    'calendarHeader',
-    {dayHeaders: dayHeaders}
-  )
+    // Only include all-day row if there are all-day events
+    var allDayRow = '';
+    if (hasAllDayEvents) {
+        allDayRow = formatTemplate('allDayRow', {allDayColumns: allDayColumns});
+    }
+
+    return formatTemplate(
+        'calendarHeader',
+        {dayHeaders: dayHeaders, allDayRow: allDayRow}
+    );
 }
 
 function generateTimeColumn() {
@@ -259,20 +284,67 @@ function renderCalendar() {
     }
 
     if (container) {
+        var calendarBody = calendar.eventsLoaded ?
+            generateCalendarBodyWithEvents(weekDates) :
+            generateCalendarBody(weekDates);
+
         container.innerHTML = generateHeader(weekDates) +
                              generateCalendarHeader(weekDates) +
-                             generateCalendarBody(weekDates) +
+                             calendarBody +
                              generateFooter();
+
+        // Adjust padding-top for calendar container based on all-day events height
+        var allDayHeight = calculateAllDayHeight(weekDates);
+        var basePadding = 70; // Base header height
+        var totalPadding = basePadding + allDayHeight;
+        container.style.paddingTop = totalPadding + 'px';
     }
 
     // Auto-scroll to current time if today is visible
     if (hasToday(weekDates)) {
         var currentHour = new Date().getHours();
-        var scrollTop = Math.max(0, (currentHour - 5) * 60) + 70;
+        var baseOffset = 70; // Base header height
+        var allDayHeight = calculateAllDayHeight(weekDates);
+        var scrollTop = Math.max(0, (currentHour - 5) * 60) + baseOffset + allDayHeight;
         setTimeout(function() {
             window.scrollTo(0, scrollTop);
         }, 300);
     }
+}
+
+function calculateAllDayHeight(weekDates) {
+    if (!calendar.eventsLoaded) {
+        return 0;
+    }
+
+    var maxAllDayEvents = 0;
+    var hasAnyAllDayEvents = false;
+
+    for (var i = 0; i < weekDates.length; i++) {
+        var dateKey = formatDate(weekDates[i]);
+        var dayEvents = calendar.events[dateKey] || [];
+        var allDayCount = 0;
+
+        for (var j = 0; j < dayEvents.length; j++) {
+            if (dayEvents[j].all_day) {
+                allDayCount++;
+                hasAnyAllDayEvents = true;
+            }
+        }
+
+        if (allDayCount > maxAllDayEvents) {
+            maxAllDayEvents = allDayCount;
+        }
+    }
+
+    // If no all-day events, return 0 (no all-day row shown)
+    if (!hasAnyAllDayEvents) {
+        return 0;
+    }
+
+    // Each all-day event is about 24px high (20px + 2px margin + 2px padding)
+    // Plus base height for the all-day row header (about 30px minimum)
+    return maxAllDayEvents * 24 + 35; // Base row height + events height
 }
 
 function updateUrl() {
@@ -389,40 +461,9 @@ function loadEventsForCurrentWeek() {
         if (data && data.events) {
             calendar.events = data.events;
             calendar.eventsLoaded = true;
-            renderCalendarWithEvents();
+            renderCalendar();
         }
     });
-}
-
-function renderCalendarWithEvents() {
-    var weekDates = getWeekDates();
-    var container = document.getElementsByClassName('calendar-container')[0];
-
-    if (!container) {
-        var containers = document.getElementsByTagName('div');
-        for (var i = 0; i < containers.length; i++) {
-            if (containers[i].className === 'calendar-container') {
-                container = containers[i];
-                break;
-            }
-        }
-    }
-
-    if (container) {
-        container.innerHTML = generateHeader(weekDates) +
-                             generateCalendarHeader(weekDates) +
-                             generateCalendarBodyWithEvents(weekDates) +
-                             generateFooter();
-    }
-
-    // Auto-scroll to current time if today is visible
-    if (hasToday(weekDates)) {
-        var currentHour = new Date().getHours();
-        var scrollTop = Math.max(0, (currentHour - 5) * 60) + 70;
-        setTimeout(function() {
-            window.scrollTo(0, scrollTop);
-        }, 300);
-    }
 }
 
 function generateCalendarBodyWithEvents(weekDates) {
@@ -464,23 +505,16 @@ function generateEventsForDate(date) {
         return '';
     }
 
-    var allDayEvents = [];
     var timedEvents = [];
 
+    // Only process timed events here - all-day events are handled in the header
     for (var i = 0; i < dayEvents.length; i++) {
-        if (dayEvents[i].all_day) {
-            allDayEvents.push(dayEvents[i]);
-        } else {
+        if (!dayEvents[i].all_day) {
             timedEvents.push(dayEvents[i]);
         }
     }
 
     var eventsHtml = '';
-
-    // Render all-day events
-    for (var i = 0; i < allDayEvents.length; i++) {
-        eventsHtml += generateAllDayEvent(allDayEvents[i], i);
-    }
 
     // Calculate layout for overlapping timed events
     var eventsWithLayout = calculateEventsLayout(timedEvents);
@@ -493,13 +527,39 @@ function generateEventsForDate(date) {
     return eventsHtml;
 }
 
-function generateAllDayEvent(event, index) {
+function generateAllDayEventsForDate(date) {
+    var dateKey = formatDate(date);
+    var dayEvents = calendar.events[dateKey] || [];
+
+    if (dayEvents.length === 0) {
+        return '';
+    }
+
+    var allDayEvents = [];
+
+    // Only process all-day events
+    for (var i = 0; i < dayEvents.length; i++) {
+        if (dayEvents[i].all_day) {
+            allDayEvents.push(dayEvents[i]);
+        }
+    }
+
+    var eventsHtml = '';
+
+    // Render all-day events for header
+    for (var i = 0; i < allDayEvents.length; i++) {
+        eventsHtml += generateAllDayEventForHeader(allDayEvents[i], i);
+    }
+
+    return eventsHtml;
+}
+
+function generateAllDayEventForHeader(event, index) {
     var isPast = isEventPast(event);
     var pastClass = isPast ? ' past-event' : '';
 
-    return '<div class="event all-day-event' + pastClass + '" style="top: ' + (index * 22) + 'px;">' +
+    return '<div class="all-day-event-header' + pastClass + '" style="margin-bottom: 2px;">' +
                '<div class="event-title">' + (event.summary || calendar.translations['No Title']) + '</div>' +
-               (event.location ? '<div class="event-location">📍 ' + event.location + '</div>' : '') +
            '</div>';
 }
 
