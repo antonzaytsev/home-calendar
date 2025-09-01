@@ -66,6 +66,8 @@ def parse_calendar_events(ical_content, logger)
 
     calendars.each do |calendar|
       calendar.events.each do |component|
+        next unless component.dtstart
+
         event = {}
 
         event['created'] = component.created.to_s
@@ -75,13 +77,8 @@ def parse_calendar_events(ical_content, logger)
         event['description'] = (component.description.to_s || '').dup.force_encoding('UTF-8')
         event['location'] = (component.location.to_s || '').dup.force_encoding('UTF-8')
 
-        # Handle start time
-        if component.dtstart
-          event['start'] = component.dtstart
-          event['all_day'] = component.dtstart.is_a?(Icalendar::Values::Date)
-        else
-          next # Skip events without start time
-        end
+        event['start'] = component.dtstart
+        event['all_day'] = component.dtstart.is_a?(Icalendar::Values::Date)
 
         # Handle end time
         if component.dtend
@@ -95,8 +92,24 @@ def parse_calendar_events(ical_content, logger)
           end
         end
 
+        event['start'] = event['start'].iso8601
+        event['end'] = event['end'].iso8601
+
         # Extract UID for uniqueness
         event['uid'] = (component.uid.to_s || '').dup.force_encoding('UTF-8')
+
+        if component.exdate && !component.exdate.empty?
+          event['exdate'] = []
+          Array(component.exdate).each do |exdate_value|
+            if exdate_value.is_a?(Array)
+              exdate_value.each do |date|
+                event['exdate'] << date.to_s
+              end
+            else
+              event['exdate'] << exdate_value.to_s
+            end
+          end
+        end
 
         events << event
       end
@@ -112,15 +125,11 @@ end
 
 def save_webcal_data(content, file_path, logger)
   begin
-    # Ensure the directory exists
     FileUtils.mkdir_p(File.dirname(file_path))
 
-    # Convert whole text to UTF-8 before saving
     utf8_content = content.dup.force_encoding('UTF-8')
-    # Handle any invalid byte sequences by replacing them with replacement characters
     utf8_content = utf8_content.encode('UTF-8', 'UTF-8', invalid: :replace, undef: :replace, replace: '')
 
-    # Write to a temporary file first, then move it to avoid partial writes
     temp_file = "#{file_path}.tmp"
     File.write(temp_file, utf8_content, encoding: 'UTF-8')
     File.rename(temp_file, file_path)
@@ -135,31 +144,13 @@ end
 
 def save_parsed_events(events, file_path, logger)
   begin
-    # Ensure the directory exists
     FileUtils.mkdir_p(File.dirname(file_path))
 
-    # Convert events to JSON-serializable format
-    json_events = []
-    events.each do |event|
-      json_events << {
-        uid: event['uid'],
-        summary: event['summary'],
-        description: event['description'],
-        location: event['location'],
-        all_day: event['all_day'],
-        start: event['start'].iso8601,
-        end: event['end'].iso8601,
-        created: event['created'],
-        last_modified: event['last_modified']
-      }
-    end
-
-    # Write to a temporary file first, then move it to avoid partial writes
     temp_file = "#{file_path}.tmp"
-    File.write(temp_file, JSON.pretty_generate({ events: json_events, updated_at: Time.now.iso8601 }), encoding: 'UTF-8')
+    File.write(temp_file, JSON.pretty_generate({ events: events, updated_at: Time.now.iso8601 }), encoding: 'UTF-8')
     File.rename(temp_file, file_path)
 
-    logger.info("Successfully saved #{json_events.length} parsed events to #{file_path}")
+    logger.info("Successfully saved #{events.length} parsed events to #{file_path}")
     return true
   rescue => e
     logger.error("Error saving parsed events: #{e.message}")
@@ -179,30 +170,16 @@ logger.info("WEBCAL_URL: #{webcal_url}")
 logger.info("File path: #{WEBCAL_FILE_PATH}")
 logger.info("Fetch interval: #{FETCH_INTERVAL_SECONDS} seconds")
 
-# Fetch data immediately on startup
-logger.info("Performing initial fetch...")
-content = fetch_webcal_data(webcal_url, logger)
-if content
-  save_webcal_data(content, WEBCAL_FILE_PATH, logger)
-  # Parse and save as JSON
-  events = parse_calendar_events(content, logger)
-  save_parsed_events(events, WEBCAL_JSON_PATH, logger)
-else
-  logger.warn("Initial fetch failed, will retry in #{FETCH_INTERVAL_SECONDS} seconds")
-end
-
-# Main loop - fetch every minute
 logger.info("Starting periodic fetch loop...")
 loop do
-  sleep FETCH_INTERVAL_SECONDS
-
   content = fetch_webcal_data(webcal_url, logger)
   if content
     save_webcal_data(content, WEBCAL_FILE_PATH, logger)
-    # Parse and save as JSON
     events = parse_calendar_events(content, logger)
     save_parsed_events(events, WEBCAL_JSON_PATH, logger)
   else
     logger.warn("Fetch failed, will retry in #{FETCH_INTERVAL_SECONDS} seconds")
   end
+
+  sleep FETCH_INTERVAL_SECONDS
 end

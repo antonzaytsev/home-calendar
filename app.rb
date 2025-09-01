@@ -37,8 +37,6 @@ def t(text)
   RUSSIAN_TRANSLATIONS[text] || text
 end
 
-# Set up logging
-
 def logger
   return @logger if @logger
 
@@ -63,6 +61,10 @@ def read_parsed_events_from_json
           'location' => json_event['location'] || '',
           'all_day' => json_event['all_day'] || false
         }
+
+        if json_event['exdate']
+          event['exdate'] = json_event['exdate']
+        end
 
         begin
           if json_event['start']
@@ -96,94 +98,12 @@ def read_parsed_events_from_json
   end
 end
 
-def read_webcal_data_from_file_fallback
-  begin
-    if File.exist?(WEBCAL_FILE_PATH)
-      content = File.read(WEBCAL_FILE_PATH, encoding: 'UTF-8')
-      logger.info("Fallback: reading and parsing ical data from filesystem (#{content.length} bytes)")
-      return parse_calendar_events(content)
-    else
-      logger.error("Webcal file not found at #{WEBCAL_FILE_PATH}")
-      return []
-    end
-  rescue => e
-    logger.error("Error reading webcal data from file: #{e.message}")
-    return []
-  end
-end
-
-def parse_calendar_events(ical_content)
-  begin
-    calendars = Icalendar::Calendar.parse(ical_content)
-    events = []
-
-    calendars.each do |calendar|
-      calendar.events.each do |component|
-        event = {}
-
-        # Extract basic event information
-        event['summary'] = (component.summary.to_s || t('No Title')).dup.force_encoding('UTF-8')
-        event['description'] = (component.description.to_s || '').dup.force_encoding('UTF-8')
-        event['location'] = (component.location.to_s || '').dup.force_encoding('UTF-8')
-
-        # Handle start time
-        if component.dtstart
-          event['start'] = component.dtstart
-          event['all_day'] = component.dtstart.is_a?(Icalendar::Values::Date)
-        else
-          next # Skip events without start time
-        end
-
-        # Handle end time
-        if component.dtend
-          event['end'] = component.dtend
-        else
-          # If no end time, assume 1 hour duration for timed events
-          if event['all_day']
-            event['end'] = event['start']
-          else
-            event['end'] = event['start'] + (60 * 60) # Add 1 hour in seconds
-          end
-        end
-
-        # Extract UID for uniqueness
-        event['uid'] = (component.uid.to_s || '').dup.force_encoding('UTF-8')
-
-        events << event
-      end
-    end
-
-    return events
-  rescue => e
-    logger.error("Error parsing calendar events: #{e}")
-    return []
-  end
-end
-
-def get_week_dates(target_date = nil)
-  if target_date.nil?
-    target_date = Date.today
-  elsif target_date.is_a?(String)
-    target_date = Date.parse(target_date)
-  elsif target_date.is_a?(Time) || target_date.is_a?(DateTime)
-    target_date = target_date.to_date
-  end
-
-  start_day = target_date - DAYS_IN_PAST
-  (0...TOTAL_DAYS).map { |i| start_day + i }
-end
-
 def filter_events_for_week(events, week_dates)
-  """Filter events to show only those in the given date range"""
-  week_start = week_dates.first
-  week_end = week_dates.last
-
   week_events = {}
   week_dates.each { |date| week_events[date] = [] }
 
   events.each do |event|
     begin
-      # Convert event dates to date objects for comparison
       if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
         event_start_date = event['start'].to_date
       else
@@ -214,7 +134,6 @@ def filter_events_for_week(events, week_dates)
 end
 
 def format_event_time(event)
-  """Format event time for display"""
   return t('All Day') if event['all_day']
 
   begin
@@ -237,51 +156,46 @@ end
 
 get '/events' do
   content_type :json
-  
+
   # Get date range from parameters
   start_date_param = params[:start_date]
   end_date_param = params[:end_date]
-  
+
   unless start_date_param && end_date_param
     halt 400, { error: 'start_date and end_date parameters are required' }.to_json
   end
-  
+
   begin
     start_date = Date.parse(start_date_param)
     end_date = Date.parse(end_date_param)
   rescue => e
     halt 400, { error: 'Invalid date format. Use YYYY-MM-DD' }.to_json
   end
-  
+
   # Read events from JSON cache first, fallback to ical
   all_events = read_parsed_events_from_json
-  if all_events.nil?
-    all_events = read_webcal_data_from_file_fallback
-  end
-  
+
   if all_events.nil? || all_events.empty?
-    return { 
+    return {
       events: {},
       error: t("Failed to read calendar data from file. Check if fetcher service is running.")
     }.to_json
   end
-  
-  # Filter events for the requested date range
+
   week_dates = []
   current_date = start_date
   while current_date <= end_date
     week_dates << current_date
     current_date = current_date + 1
   end
-  
+
   week_events = filter_events_for_week(all_events, week_dates)
-  
-  # Convert events to JSON-friendly format
+
   json_events = {}
   week_events.each do |date, events|
     date_key = date.strftime('%Y-%m-%d')
     json_events[date_key] = events.map do |event|
-      {
+      event_json = {
         uid: event['uid'],
         summary: event['summary'],
         description: event['description'],
@@ -290,9 +204,15 @@ get '/events' do
         start: event['start'].respond_to?(:iso8601) ? event['start'].iso8601 : event['start'].to_s,
         end: event['end'].respond_to?(:iso8601) ? event['end'].iso8601 : event['end'].to_s
       }
+
+      if event['exdate']
+        event_json[:exdate] = event['exdate']
+      end
+
+      event_json
     end
   end
-  
+
   {
     events: json_events,
     timestamp: Time.now.getlocal("+03:00").iso8601
@@ -304,7 +224,6 @@ get '/health' do
   { status: t('healthy'), timestamp: Time.now.getlocal("+03:00").iso8601 }.to_json
 end
 
-# Helper methods for ERB templates
 helpers do
   def format_event_time(event)
     return t('All Day') if event['all_day']
