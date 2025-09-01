@@ -113,12 +113,17 @@ def save_webcal_data(content, file_path, logger)
   begin
     # Ensure the directory exists
     FileUtils.mkdir_p(File.dirname(file_path))
-    
+
+    # Convert whole text to UTF-8 before saving
+    utf8_content = content.dup.force_encoding('UTF-8')
+    # Handle any invalid byte sequences by replacing them with replacement characters
+    utf8_content = utf8_content.encode('UTF-8', 'UTF-8', invalid: :replace, undef: :replace, replace: '')
+
     # Write to a temporary file first, then move it to avoid partial writes
     temp_file = "#{file_path}.tmp"
-    File.write(temp_file, content, encoding: 'UTF-8')
+    File.write(temp_file, utf8_content, encoding: 'UTF-8')
     File.rename(temp_file, file_path)
-    
+
     logger.info("Successfully saved webcal data to #{file_path}")
     return true
   rescue => e
@@ -131,7 +136,7 @@ def save_parsed_events(events, file_path, logger)
   begin
     # Ensure the directory exists
     FileUtils.mkdir_p(File.dirname(file_path))
-    
+
     # Convert events to JSON-serializable format
     json_events = []
     events.each do |event|
@@ -154,12 +159,12 @@ def save_parsed_events(events, file_path, logger)
 
       json_events << json_event
     end
-    
+
     # Write to a temporary file first, then move it to avoid partial writes
     temp_file = "#{file_path}.tmp"
     File.write(temp_file, JSON.pretty_generate({ events: json_events, updated_at: Time.now.iso8601 }), encoding: 'UTF-8')
     File.rename(temp_file, file_path)
-    
+
     logger.info("Successfully saved #{json_events.length} parsed events to #{file_path}")
     return true
   rescue => e
@@ -196,7 +201,7 @@ end
 logger.info("Starting periodic fetch loop...")
 loop do
   sleep FETCH_INTERVAL_SECONDS
-  
+
   content = fetch_webcal_data(webcal_url, logger)
   if content
     save_webcal_data(content, WEBCAL_FILE_PATH, logger)
