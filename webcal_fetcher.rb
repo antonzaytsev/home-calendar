@@ -60,7 +60,6 @@ def fetch_webcal_data(url, logger)
 end
 
 def parse_calendar_events(ical_content, logger)
-  """Parse iCal content and extract events"""
   begin
     calendars = Icalendar::Calendar.parse(ical_content)
     events = []
@@ -69,7 +68,9 @@ def parse_calendar_events(ical_content, logger)
       calendar.events.each do |component|
         event = {}
 
-        # Extract basic event information
+        event['created'] = component.created.to_s
+        event['last_modified'] = component.last_modified&.to_s
+
         event['summary'] = (component.summary.to_s || t('No Title')).dup.force_encoding('UTF-8')
         event['description'] = (component.description.to_s || '').dup.force_encoding('UTF-8')
         event['location'] = (component.location.to_s || '').dup.force_encoding('UTF-8')
@@ -140,24 +141,17 @@ def save_parsed_events(events, file_path, logger)
     # Convert events to JSON-serializable format
     json_events = []
     events.each do |event|
-      json_event = {
+      json_events << {
         uid: event['uid'],
         summary: event['summary'],
         description: event['description'],
         location: event['location'],
-        all_day: event['all_day']
+        all_day: event['all_day'],
+        start: event['start'].iso8601,
+        end: event['end'].iso8601,
+        created: event['created'],
+        last_modified: event['last_modified']
       }
-
-      # Convert dates to ISO format
-      if event['start'].is_a?(Icalendar::Values::DateTime) || event['start'].is_a?(Time)
-        json_event[:start] = event['start'].iso8601
-        json_event[:end] = event['end'].iso8601
-      else
-        json_event[:start] = event['start'].iso8601
-        json_event[:end] = event['end'].iso8601
-      end
-
-      json_events << json_event
     end
 
     # Write to a temporary file first, then move it to avoid partial writes
