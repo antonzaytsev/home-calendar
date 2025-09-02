@@ -394,6 +394,30 @@ def expand_recurring_event(event, start_date, end_date)
   occurrences
 end
 
+def extract_base_uid(uid)
+  # Remove timestamp suffix from generated UIDs (e.g., "original_uid_20240101" -> "original_uid")
+  uid.gsub(/_\d{8}(T\d{6})?$/, '')
+end
+
+def deduplicate_events_by_uid(events)
+  # Group events by base UID
+  grouped_by_uid = events.group_by { |event| extract_base_uid(event['uid']) }
+  
+  # For each group, keep only the latest created event (last in array = most recently processed/created)
+  deduplicated = []
+  grouped_by_uid.each do |base_uid, uid_events|
+    if uid_events.length > 1
+      # Keep the last event in the array (latest created/processed)
+      latest_event = uid_events.last
+      deduplicated << latest_event
+    else
+      deduplicated << uid_events.first
+    end
+  end
+  
+  deduplicated
+end
+
 def filter_events_for_week_with_recurring(events, week_dates)
   week_events = {}
   week_dates.each { |date| week_events[date] = [] }
@@ -454,6 +478,14 @@ def filter_events_for_week_with_recurring(events, week_dates)
       logger.warn("Error processing event #{event['summary'] || 'Unknown'}: #{e}")
       next
     end
+  end
+
+  # Deduplicate events by base UID for each day
+  week_events.each do |date, events|
+    next if events.empty?
+    
+    # Remove duplicates with same base UID, keeping the latest
+    week_events[date] = deduplicate_events_by_uid(events)
   end
 
   week_events
