@@ -53,6 +53,28 @@ var calendar = {
   }
 }
 
+function isIPad1() {
+    return navigator.userAgent.indexOf('iPad;') !== -1
+}
+
+function adjustEventTimeForIPad1(dateTimeString) {
+    if (!isIPad1()) {
+        return dateTimeString;
+    }
+
+    try {
+        var date = new Date(dateTimeString);
+        if (isNaN(date.getTime())) {
+            return dateTimeString;
+        }
+
+        date.setTime(date.getTime() - 3600000);
+        return date.toISOString();
+    } catch (e) {
+        return dateTimeString;
+    }
+}
+
 function getUrlParameter(name) {
     var search = window.location.search.substring(1);
     var params = search.split('&');
@@ -459,7 +481,40 @@ function loadEventsForCurrentWeek() {
         }
 
         if (data && data.events) {
-            calendar.events = data.events;
+            if (isIPad1()) {
+                var adjustedEvents = {};
+                for (var dateKey in data.events) {
+                    adjustedEvents[dateKey] = [];
+                    for (var i = 0; i < data.events[dateKey].length; i++) {
+                        var event = data.events[dateKey][i];
+                        var adjustedEvent = {
+                            uid: event.uid,
+                            summary: event.summary,
+                            description: event.description,
+                            location: event.location,
+                            all_day: event.all_day
+                        };
+
+                        // Adjust times for non-all-day events only
+                        if (!event.all_day && event.start && event.end) {
+                            adjustedEvent.start = adjustEventTimeForIPad1(event.start);
+                            adjustedEvent.end = adjustEventTimeForIPad1(event.end);
+                        } else {
+                            adjustedEvent.start = event.start;
+                            adjustedEvent.end = event.end;
+                        }
+
+                        // Copy any additional properties
+                        if (event.rrule) adjustedEvent.rrule = event.rrule;
+                        if (event.exdate) adjustedEvent.exdate = event.exdate;
+
+                        adjustedEvents[dateKey].push(adjustedEvent);
+                    }
+                }
+                calendar.events = adjustedEvents;
+            } else {
+                calendar.events = data.events;
+            }
             calendar.eventsLoaded = true;
             renderCalendar();
         }
