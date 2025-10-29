@@ -31,7 +31,42 @@ var TEMPLATES = {
       '<div class="event-time">{timeString}</div>' +
       '<div class="event-location{locationClass}">📍 {location}</div>' +
     '</div>',
-  footer: '<div class="footer">Последнее обновление: {lastUpdate} | Автообновление каждые {updateEveryMinutes} минут</div>',
+  footer: '<div class="footer">'+
+            '<div class="footer-text">Последнее обновление: {lastUpdate} | Автообновление каждые {updateEveryMinutes} минут</div>'+
+            '<button class="settings-button" onclick="openSettings()" title="Настройки">Настройки</button>'+
+          '</div>',
+  settingsModal:
+    '<div class="modal-overlay" id="settings-modal" onclick="closeSettingsIfOutside(event)">' +
+      '<div class="modal-content" onclick="stopEventBubbling(event)">' +
+        '<table class="modal-table">' +
+          '<tr>' +
+            '<td class="modal-header">' +
+              '<h3>Настройки</h3>' +
+              '<button class="modal-close" onclick="closeSettings()">X</button>' +
+            '</td>' +
+          '</tr>' +
+          '<tr>' +
+            '<td class="modal-body">' +
+              '<div class="setting-group">' +
+                '<div class="setting-label">Количество видимых дней:</div>' +
+                '<div class="days-controls">' +
+                  '<div class="day-option"><input type="radio" name="totalDays" value="3" id="days3"><label for="days3">3 дня</label></div>' +
+                  '<div class="day-option"><input type="radio" name="totalDays" value="4" id="days4"><label for="days4">4 дня</label></div>' +
+                  '<div class="day-option"><input type="radio" name="totalDays" value="5" id="days5"><label for="days5">5 дней</label></div>' +
+                  '<div class="day-option"><input type="radio" name="totalDays" value="7" id="days7"><label for="days7">7 дней</label></div>' +
+                '</div>' +
+              '</div>' +
+            '</td>' +
+          '</tr>' +
+          '<tr>' +
+            '<td class="modal-footer">' +
+              '<button class="btn-save" onclick="saveSettings()">Сохранить</button>' +
+              '<button class="btn-cancel" onclick="closeSettings()">Отмена</button>' +
+            '</td>' +
+          '</tr>' +
+        '</table>' +
+      '</div>' +
+    '</div>',
 }
 
 var calendar = {
@@ -313,7 +348,8 @@ function renderCalendar() {
         container.innerHTML = generateHeader(weekDates) +
                              generateCalendarHeader(weekDates) +
                              calendarBody +
-                             generateFooter();
+                             generateFooter() +
+                             formatTemplate('settingsModal', {});
 
         // Adjust padding-top for calendar container based on all-day events height
         var allDayHeight = calculateAllDayHeight(weekDates);
@@ -841,6 +877,9 @@ function startPeriodicEventUpdates() {
 }
 
 function initCalendar() {
+    // Load settings first
+    loadSettings();
+
     var dateParam = getUrlParameter('date');
     if (dateParam) {
         try {
@@ -870,6 +909,197 @@ function formatTemplate(templateName, variables) {
   }
 
   return html
+}
+
+// Cookie helper functions for older browsers
+function setCookie(name, value, days) {
+  var expires = '';
+  if (days) {
+    var date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    expires = '; expires=' + date.toUTCString();
+  }
+  document.cookie = name + '=' + encodeURIComponent(value) + expires + '; path=/';
+}
+
+function getCookie(name) {
+  var nameEQ = name + '=';
+  var cookies = document.cookie.split(';');
+  for (var i = 0; i < cookies.length; i++) {
+    var cookie = cookies[i];
+    while (cookie.charAt(0) === ' ') {
+      cookie = cookie.substring(1, cookie.length);
+    }
+    if (cookie.indexOf(nameEQ) === 0) {
+      return decodeURIComponent(cookie.substring(nameEQ.length, cookie.length));
+    }
+  }
+  return null;
+}
+
+// Settings modal functions - iPad 1 compatible
+function stopEventBubbling(event) {
+  event = event || window.event;
+  if (event.stopPropagation) {
+    event.stopPropagation();
+  } else if (event.cancelBubble !== undefined) {
+    event.cancelBubble = true; // IE < 9
+  }
+}
+
+function openSettings() {
+  var modal = document.getElementById('settings-modal');
+  if (modal) {
+    modal.style.display = 'block';
+
+    // Set current values in the modal
+    var currentTotalDays = calendar.totalDays;
+    var radios = document.getElementsByName('totalDays');
+    for (var i = 0; i < radios.length; i++) {
+      if (parseInt(radios[i].value, 10) === currentTotalDays) {
+        radios[i].checked = true;
+        break;
+      }
+    }
+  }
+}
+
+function closeSettings() {
+  var modal = document.getElementById('settings-modal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+function closeSettingsIfOutside(event) {
+  event = event || window.event;
+  var target = event.target || event.srcElement;
+  if (target && target.id === 'settings-modal') {
+    closeSettings();
+  }
+}
+
+function saveSettings() {
+  var radios = document.getElementsByName('totalDays');
+  var selectedDays = null;
+
+  for (var i = 0; i < radios.length; i++) {
+    if (radios[i].checked) {
+      selectedDays = parseInt(radios[i].value, 10);
+      break;
+    }
+  }
+
+  if (selectedDays && selectedDays !== calendar.totalDays) {
+    // Update calendar settings
+    calendar.totalDays = selectedDays;
+
+    // Calculate new daysInPast and daysInFuture based on total days
+    // Keep the current day in the middle when possible
+    calendar.daysInPast = Math.floor((selectedDays - 1) / 2);
+    calendar.daysInFuture = selectedDays - calendar.daysInPast - 1;
+
+    // Save to localStorage with fallback for older browsers
+    saveSettingsToStorage();
+
+    // Re-render calendar and reload events
+    renderCalendar();
+    loadEventsForCurrentWeek();
+  }
+
+  closeSettings();
+}
+
+function saveSettingsToStorage() {
+  var settingsObj = {
+    totalDays: calendar.totalDays,
+    daysInPast: calendar.daysInPast,
+    daysInFuture: calendar.daysInFuture
+  };
+  
+  var settingsStr;
+  if (typeof JSON !== 'undefined' && JSON.stringify) {
+    settingsStr = JSON.stringify(settingsObj);
+  } else {
+    // Fallback for browsers without JSON support
+    settingsStr = '{' +
+      '"totalDays":' + calendar.totalDays + ',' +
+      '"daysInPast":' + calendar.daysInPast + ',' +
+      '"daysInFuture":' + calendar.daysInFuture +
+      '}';
+  }
+  
+  // Try localStorage first
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.setItem) {
+      localStorage.setItem('calendar-settings', settingsStr);
+      return; // Success, exit function
+    }
+  } catch (e) {
+    // localStorage failed, try cookies
+  }
+  
+  // Fall back to cookies (expires in 365 days)
+  try {
+    setCookie('calendar-settings', settingsStr, 365);
+  } catch (e) {
+    // Even cookies failed, settings won't persist
+  }
+}
+
+function loadSettings() {
+  var settingsStr = null;
+  
+  // Try localStorage first
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem) {
+      settingsStr = localStorage.getItem('calendar-settings');
+    }
+  } catch (e) {
+    // localStorage failed
+  }
+  
+  // If localStorage didn't work or had no data, try cookies
+  if (!settingsStr) {
+    try {
+      settingsStr = getCookie('calendar-settings');
+    } catch (e) {
+      // Cookies also failed
+    }
+  }
+  
+  // Parse and apply settings if we found any
+  if (settingsStr) {
+    try {
+      var settings;
+      if (typeof JSON !== 'undefined' && JSON.parse) {
+        settings = JSON.parse(settingsStr);
+      } else {
+        // Very basic fallback parsing for simple JSON structure
+        try {
+          settings = eval('(' + settingsStr + ')');
+        } catch (evalError) {
+          return; // Skip if can't parse
+        }
+      }
+      
+      if (settings && settings.totalDays) {
+        calendar.totalDays = settings.totalDays;
+        if (settings.daysInPast !== undefined) {
+          calendar.daysInPast = settings.daysInPast;
+        } else {
+          calendar.daysInPast = Math.floor((settings.totalDays - 1) / 2);
+        }
+        if (settings.daysInFuture !== undefined) {
+          calendar.daysInFuture = settings.daysInFuture;
+        } else {
+          calendar.daysInFuture = settings.totalDays - calendar.daysInPast - 1;
+        }
+      }
+    } catch (e) {
+      // Error parsing settings, use defaults
+    }
+  }
 }
 
 if (document.addEventListener) {
