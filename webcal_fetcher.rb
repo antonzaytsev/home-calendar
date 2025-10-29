@@ -15,8 +15,8 @@ logger.formatter = proc do |severity, datetime, progname, msg|
   "[#{datetime.strftime('%Y-%m-%d %H:%M:%S')}] [FETCHER] #{severity}: #{msg}\n"
 end
 
-WEBCAL_FILE_PATH = '/app/webcal.ics'
-WEBCAL_JSON_PATH = '/app/webcal_events.json'
+WEBCAL_FILE_PATH = './webcal.ics'
+WEBCAL_JSON_PATH = './webcal_events.json'
 FETCH_INTERVAL_SECONDS = 60 # 1 minute
 
 # Russian translations for consistent error messages
