@@ -8,7 +8,7 @@ require 'logger'
 # Disable host authorization to allow access from any domain (calendar.internal, localhost, etc.)
 # Must configure before setting up the app
 configure do
-  set :protection, :except => [:host_authorization]
+  set :host_authorization, permitted_hosts: [], allow_if: ->(_) { true }
 end
 
 set :port, ENV['APP_PORT']

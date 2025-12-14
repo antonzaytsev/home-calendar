@@ -3,10 +3,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    command: ["ruby", "app.rb"]
     ports:
       - "9000:5000"
     volumes:
       - .:/app
+      - bundle:/usr/local/bundle
     env_file:
       - .env
     environment:
@@ -15,15 +17,40 @@ services:
     depends_on:
       - webcal-fetcher
     restart: unless-stopped
+#    labels:
+#      # Traefik labels to allow access from any domain (calendar.internal, localhost, etc.)
+#      - "traefik.enable=true"
+#      # Explicitly allow calendar.internal - this should work if Traefik allows it
+#      - "traefik.http.routers.app.rule=Host(`calendar.internal`)"
+#      # Alternative: if you need to allow multiple specific hosts, use:
+#      # - "traefik.http.routers.app.rule=Host(`calendar.internal`) || Host(`localhost`) || Host(`127.0.0.1`)"
+#      # Or to allow any host (if Traefik config allows):
+#      # - "traefik.http.routers.app.rule=HostRegexp(`{host:.+}`)"
+#      - "traefik.http.services.app.loadbalancer.server.port=5000"
+#      # Allow insecure (HTTP) connections if needed
+#      - "traefik.http.routers.app.entrypoints=web"
+#      # Priority to ensure this router is checked
+#      - "traefik.http.routers.app.priority=1"
+#    networks:
+#      - traefik
 
   webcal-fetcher:
     build:
       context: .
-      dockerfile: Dockerfile.fetcher
+      dockerfile: Dockerfile
+    command: ["ruby", "webcal_fetcher.rb"]
     volumes:
       - .:/app
+      - bundle:/usr/local/bundle
     env_file:
       - .env
     environment:
       - WEBCAL_URL=${WEBCAL_URL}
     restart: unless-stopped
+
+#networks:
+#  traefik:
+#    external: true
+
+volumes:
+  bundle:
