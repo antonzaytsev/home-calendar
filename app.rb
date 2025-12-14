@@ -5,9 +5,30 @@ require 'date'
 require 'time'
 require 'logger'
 
+# Disable host authorization to allow access from any domain (calendar.internal, localhost, etc.)
+# Must configure before setting up the app
+configure do
+  set :protection, :except => [:host_authorization]
+end
+
 set :port, ENV['APP_PORT']
 set :bind, '0.0.0.0'
 set :public_folder, 'public'
+
+# Allow CORS from any domain
+before do
+  headers 'Access-Control-Allow-Origin' => '*',
+          'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers' => 'Content-Type, Accept, Authorization'
+end
+
+options '*' do
+  response.headers['Allow'] = 'HEAD, GET, PUT, DELETE, OPTIONS'
+  response.headers['Access-Control-Allow-Origin'] = '*'
+  response.headers['Access-Control-Allow-Methods'] = 'HEAD, GET, PUT, DELETE, OPTIONS'
+  response.headers['Access-Control-Allow-Headers'] = 'X-Requested-With, X-HTTP-Method-Override, Content-Type, Cache-Control, Accept'
+  200
+end
 
 PAGE_REFRESH_MINUTES = 1
 WEBCAL_FILE_PATH = '/app/webcal.ics'
