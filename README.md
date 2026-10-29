@@ -24,3 +24,9 @@ A Ruby Sinatra web application that displays your calendar events in a clean wee
    ```bash
    docker-compose down
    ```
+
+## Android tablet app
+
+For a full-screen APK without browser tabs or an address bar, see
+[android/README.md](android/README.md). Build with `bash android/build.sh`;
+the installable APK is saved to `.work/android/home-calendar.apk`.
