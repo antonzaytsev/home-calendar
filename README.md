@@ -10,7 +10,8 @@ A wall calendar display that shows events from an iCloud webcal feed, with Russi
 - `app.rb` is a Sinatra app on Puma. It expands recurring events (RRULE, EXDATE,
   RECURRENCE-ID overrides) with `ice_cube` and serves them as JSON per day.
 - The page (`views/calendar.erb`, `public/calendar.js`, `public/calendar.css`) shows a
-  multi-day view that always starts one day before the selected date. The server pushes
+  multi-day view that starts one day before the selected date (the 7-day view always shows
+  Monday to Sunday). The server pushes
   updates over Server-Sent Events (`/updates`), so new events appear within seconds of
   being fetched. The page also refreshes every few minutes as a fallback, and warns
   in the footer when the server is unreachable or the feed is stale.
