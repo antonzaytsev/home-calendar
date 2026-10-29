@@ -938,6 +938,13 @@ function getCookie(name) {
 }
 
 // Settings modal functions - iPad 1 compatible
+// Always show one day before the current day; the rest are upcoming days
+function applyTotalDays(totalDays) {
+  calendar.totalDays = totalDays;
+  calendar.daysInPast = 1;
+  calendar.daysInFuture = totalDays - calendar.daysInPast - 1;
+}
+
 function stopEventBubbling(event) {
   event = event || window.event;
   if (event.stopPropagation) {
@@ -991,13 +998,7 @@ function saveSettings() {
   }
 
   if (selectedDays && selectedDays !== calendar.totalDays) {
-    // Update calendar settings
-    calendar.totalDays = selectedDays;
-
-    // Calculate new daysInPast and daysInFuture based on total days
-    // Keep the current day in the middle when possible
-    calendar.daysInPast = Math.floor((selectedDays - 1) / 2);
-    calendar.daysInFuture = selectedDays - calendar.daysInPast - 1;
+    applyTotalDays(selectedDays);
 
     // Save to localStorage with fallback for older browsers
     saveSettingsToStorage();
@@ -1012,9 +1013,7 @@ function saveSettings() {
 
 function saveSettingsToStorage() {
   var settingsObj = {
-    totalDays: calendar.totalDays,
-    daysInPast: calendar.daysInPast,
-    daysInFuture: calendar.daysInFuture
+    totalDays: calendar.totalDays
   };
   
   var settingsStr;
@@ -1022,11 +1021,7 @@ function saveSettingsToStorage() {
     settingsStr = JSON.stringify(settingsObj);
   } else {
     // Fallback for browsers without JSON support
-    settingsStr = '{' +
-      '"totalDays":' + calendar.totalDays + ',' +
-      '"daysInPast":' + calendar.daysInPast + ',' +
-      '"daysInFuture":' + calendar.daysInFuture +
-      '}';
+    settingsStr = '{"totalDays":' + calendar.totalDays + '}';
   }
   
   // Try localStorage first
@@ -1084,17 +1079,7 @@ function loadSettings() {
       }
       
       if (settings && settings.totalDays) {
-        calendar.totalDays = settings.totalDays;
-        if (settings.daysInPast !== undefined) {
-          calendar.daysInPast = settings.daysInPast;
-        } else {
-          calendar.daysInPast = Math.floor((settings.totalDays - 1) / 2);
-        }
-        if (settings.daysInFuture !== undefined) {
-          calendar.daysInFuture = settings.daysInFuture;
-        } else {
-          calendar.daysInFuture = settings.totalDays - calendar.daysInPast - 1;
-        }
+        applyTotalDays(settings.totalDays);
       }
     } catch (e) {
       // Error parsing settings, use defaults
