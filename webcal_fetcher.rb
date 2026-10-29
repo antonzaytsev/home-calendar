@@ -1,201 +1,159 @@
 #!/usr/bin/env ruby
-require 'net/http'
-require 'uri'
-require 'logger'
-require 'fileutils'
+require 'bundler/setup'
+require 'digest'
 require 'icalendar'
 require 'json'
-require 'date'
+require 'logger'
+require 'net/http'
 require 'time'
 
-# Set up logging
-logger = Logger.new(STDOUT)
-logger.level = Logger::INFO
-logger.formatter = proc do |severity, datetime, progname, msg|
+EVENTS_PATH = File.join(__dir__, 'webcal_events.json')
+STATUS_PATH = File.join(__dir__, 'webcal_status.json')
+FETCH_INTERVAL_SECONDS = Integer(ENV.fetch('FETCH_INTERVAL_SECONDS', 60))
+MAX_REDIRECTS = 5
+
+$stdout.sync = true
+LOGGER = Logger.new($stdout, level: Logger::INFO)
+LOGGER.formatter = proc do |severity, datetime, _progname, msg|
   "[#{datetime.strftime('%Y-%m-%d %H:%M:%S')}] [FETCHER] #{severity}: #{msg}\n"
 end
 
-WEBCAL_FILE_PATH = './webcal.ics'
-WEBCAL_JSON_PATH = './webcal_events.json'
-FETCH_INTERVAL_SECONDS = 60 # 1 minute
+# Returns the response, or nil when the calendar is unchanged since the last fetch
+def fetch_calendar(url, etag:, last_modified:, redirects_left: MAX_REDIRECTS)
+  uri = URI(url)
+  request = Net::HTTP::Get.new(uri)
+  request['If-None-Match'] = etag if etag
+  request['If-Modified-Since'] = last_modified if last_modified
 
-# Russian translations for consistent error messages
-RUSSIAN_TRANSLATIONS = {
-  'All Day' => 'Весь день',
-  'No Title' => 'Без названия'
-}.freeze
+  response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https',
+                                                 open_timeout: 10, read_timeout: 30) do |http|
+    http.request(request)
+  end
 
-def t(text)
-  RUSSIAN_TRANSLATIONS[text] || text
-end
+  case response
+  when Net::HTTPNotModified
+    nil
+  when Net::HTTPSuccess
+    response
+  when Net::HTTPRedirection
+    raise 'Too many redirects' if redirects_left.zero?
 
-def fetch_webcal_data(url, logger)
-  begin
-    # Convert webcal:// to https://
-    if url.start_with?('webcal://')
-      url = url.sub('webcal://', 'https://')
-    end
-
-    logger.info("Fetching webcal data from #{url}")
-    uri = URI(url)
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = (uri.scheme == 'https')
-    http.read_timeout = 30
-    http.open_timeout = 10
-
-    request = Net::HTTP::Get.new(uri)
-    response = http.request(request)
-
-    if response.is_a?(Net::HTTPSuccess)
-      logger.info("Successfully fetched webcal data (#{response.body.length} bytes)")
-      return response.body
-    else
-      logger.error("HTTP error fetching webcal data: #{response.code} - #{response.message}")
-      return nil
-    end
-  rescue => e
-    logger.error("Error fetching webcal data: #{e.message}")
-    return nil
+    fetch_calendar(URI.join(url, response['location']).to_s, etag: etag, last_modified: last_modified,
+                                                              redirects_left: redirects_left - 1)
+  else
+    raise "HTTP #{response.code} #{response.message}"
   end
 end
 
-def parse_calendar_events(ical_content, logger)
-  begin
-    calendars = Icalendar::Calendar.parse(ical_content)
-    events = []
-
-    calendars.each do |calendar|
-      calendar.events.each do |component|
-        next unless component.dtstart
-
-        event = {}
-
-        event['created'] = component.created.to_s
-        event['last_modified'] = component.last_modified&.to_s
-
-        event['summary'] = (component.summary.to_s || t('No Title')).dup.force_encoding('UTF-8')
-        event['description'] = (component.description.to_s || '').dup.force_encoding('UTF-8')
-        event['location'] = (component.location.to_s || '').dup.force_encoding('UTF-8')
-
-        event['start'] = component.dtstart
-        event['all_day'] = component.dtstart.is_a?(Icalendar::Values::Date)
-
-        # Handle end time
-        if component.dtend
-          event['end'] = component.dtend
-        else
-          # If no end time, assume 1 hour duration for timed events
-          if event['all_day']
-            event['end'] = event['start']
-          else
-            event['end'] = event['start'] + (60 * 60) # Add 1 hour in seconds
-          end
-        end
-
-        event['start'] = event['start'].iso8601
-        event['end'] = event['end'].iso8601
-
-        # Extract UID for uniqueness
-        event['uid'] = (component.uid.to_s || '').dup.force_encoding('UTF-8')
-
-        # Extract RRULE for recurring events
-        if component.rrule && !component.rrule.empty?
-          rrule_object = component.rrule.first
-
-          rrule_parts = []
-          rrule_parts << "FREQ=#{rrule_object.frequency}" if rrule_object.frequency
-          rrule_parts << "UNTIL=#{rrule_object.until}" if rrule_object.until
-          rrule_parts << "COUNT=#{rrule_object.count}" if rrule_object.count
-          rrule_parts << "INTERVAL=#{rrule_object.interval}" if rrule_object.interval && rrule_object.interval != 1
-          rrule_parts << "BYDAY=#{Array(rrule_object.by_day).join(',')}" if rrule_object.by_day && !rrule_object.by_day.empty?
-          rrule_parts << "BYMONTHDAY=#{Array(rrule_object.by_month_day).join(',')}" if rrule_object.by_month_day && !rrule_object.by_month_day.empty?
-          rrule_parts << "BYMONTH=#{Array(rrule_object.by_month).join(',')}" if rrule_object.by_month && !rrule_object.by_month.empty?
-          rrule_parts << "WKST=#{rrule_object.week_start}" if rrule_object.week_start
-
-          event['rrule'] = rrule_parts.join(';') unless rrule_parts.empty?
-        end
-
-        if component.exdate && !component.exdate.empty?
-          event['exdate'] = []
-          Array(component.exdate).each do |exdate_value|
-            if exdate_value.is_a?(Array)
-              exdate_value.each do |date|
-                event['exdate'] << date.to_s
-              end
-            else
-              event['exdate'] << exdate_value.to_s
-            end
-          end
-        end
-
-        events << event
-      end
-    end
-
-    logger.info("Successfully parsed #{events.length} events from calendar")
-    return events
-  rescue => e
-    logger.error("Error parsing calendar events: #{e.message}")
-    return []
-  end
+def text(value)
+  value.to_s.dup.force_encoding('UTF-8').scrub('')
 end
 
-def save_webcal_data(content, file_path, logger)
-  begin
-    FileUtils.mkdir_p(File.dirname(file_path))
-
-    utf8_content = content.dup.force_encoding('UTF-8')
-    utf8_content = utf8_content.encode('UTF-8', 'UTF-8', invalid: :replace, undef: :replace, replace: '')
-
-    temp_file = "#{file_path}.tmp"
-    File.write(temp_file, utf8_content, encoding: 'UTF-8')
-    File.rename(temp_file, file_path)
-
-    logger.info("Successfully saved webcal data to #{file_path}")
-    return true
-  rescue => e
-    logger.error("Error saving webcal data: #{e.message}")
-    return false
+def serialize_rrule(rule)
+  parts = []
+  parts << "FREQ=#{rule.frequency}" if rule.frequency
+  parts << "UNTIL=#{rule.until}" if rule.until
+  parts << "COUNT=#{rule.count}" if rule.count
+  parts << "INTERVAL=#{rule.interval}" if rule.interval && rule.interval.to_i != 1
+  { 'BYDAY' => rule.by_day, 'BYMONTHDAY' => rule.by_month_day, 'BYMONTH' => rule.by_month,
+    'BYSETPOS' => rule.by_set_position }.each do |key, values|
+    parts << "#{key}=#{Array(values).join(',')}" unless Array(values).empty?
   end
+  parts << "WKST=#{rule.week_start}" if rule.week_start
+  parts.join(';')
 end
 
-def save_parsed_events(events, file_path, logger)
-  begin
-    FileUtils.mkdir_p(File.dirname(file_path))
+def duration_seconds(duration)
+  return unless duration
 
-    temp_file = "#{file_path}.tmp"
-    File.write(temp_file, JSON.pretty_generate({ events: events, updated_at: Time.now.iso8601 }), encoding: 'UTF-8')
-    File.rename(temp_file, file_path)
-
-    logger.info("Successfully saved #{events.length} parsed events to #{file_path}")
-    return true
-  rescue => e
-    logger.error("Error saving parsed events: #{e.message}")
-    return false
-  end
+  seconds = ((duration.weeks * 7 + duration.days) * 86_400) + (duration.hours * 3600) + (duration.minutes * 60) +
+            duration.seconds
+  duration.past ? -seconds : seconds
 end
 
-# Check for required environment variable
-webcal_url = ENV['WEBCAL_URL']
-if webcal_url.nil? || webcal_url.empty?
-  logger.error("WEBCAL_URL environment variable not configured")
+# DTEND, else DTSTART + DURATION, else one day (all-day) or one hour
+def event_end(component, start, all_day)
+  return component.dtend if component.dtend
+
+  seconds = duration_seconds(component.duration)
+  return start + [seconds.to_i / 86_400, 1].max if all_day
+
+  start.to_time + (seconds || 3600)
+end
+
+def serialize_event(component)
+  return unless component.dtstart
+
+  start = component.dtstart
+  all_day = start.is_a?(Icalendar::Values::Date)
+  finish = event_end(component, start, all_day)
+
+  event = {
+    'uid' => text(component.uid),
+    'summary' => text(component.summary),
+    'location' => text(component.location),
+    'all_day' => all_day,
+    'start' => start.iso8601,
+    'end' => finish.iso8601
+  }
+
+  rule = component.rrule.first
+  event['rrule'] = serialize_rrule(rule) if rule
+  exdates = component.exdate.flatten.map(&:iso8601)
+  event['exdate'] = exdates unless exdates.empty?
+  event['recurrence_id'] = component.recurrence_id.iso8601 if component.recurrence_id
+  event
+end
+
+def parse_events(ics)
+  events = Icalendar::Calendar.parse(ics).flat_map(&:events).filter_map do |component|
+    serialize_event(component)
+  rescue StandardError => e
+    LOGGER.warn("Skipping event #{component.uid}: #{e.message}")
+    nil
+  end
+  raise 'Calendar contains no events' if events.empty?
+
+  events
+end
+
+def write_json(path, data)
+  temp_path = "#{path}.tmp"
+  File.write(temp_path, JSON.generate(data))
+  File.rename(temp_path, path)
+end
+
+# Allow loading the helpers above without starting the fetch loop
+return unless $PROGRAM_NAME == __FILE__
+
+webcal_url = ENV['WEBCAL_URL'].to_s.sub(%r{\Awebcal://}, 'https://')
+if webcal_url.empty?
+  LOGGER.error('WEBCAL_URL environment variable is not configured')
   exit 1
 end
 
-logger.info("Starting webcal fetcher service")
-logger.info("WEBCAL_URL: #{webcal_url}")
-logger.info("File path: #{WEBCAL_FILE_PATH}")
-logger.info("Fetch interval: #{FETCH_INTERVAL_SECONDS} seconds")
+LOGGER.info("Fetching #{URI(webcal_url).host} every #{FETCH_INTERVAL_SECONDS} seconds")
+etag = last_modified = digest = nil
 
-logger.info("Starting periodic fetch loop...")
 loop do
-  content = fetch_webcal_data(webcal_url, logger)
-  if content
-    save_webcal_data(content, WEBCAL_FILE_PATH, logger)
-    events = parse_calendar_events(content, logger)
-    save_parsed_events(events, WEBCAL_JSON_PATH, logger)
-  else
-    logger.warn("Fetch failed, will retry in #{FETCH_INTERVAL_SECONDS} seconds")
+  begin
+    response = fetch_calendar(webcal_url, etag: etag, last_modified: last_modified)
+    if response
+      body = response.body
+      body_digest = Digest::SHA256.hexdigest(body)
+      if body_digest != digest
+        events = parse_events(body)
+        write_json(EVENTS_PATH, { events: events, updated_at: Time.now.iso8601 })
+        LOGGER.info("Saved #{events.size} events (#{body.bytesize} bytes)")
+        digest = body_digest
+      end
+      etag = response['etag']
+      last_modified = response['last-modified']
+    end
+    write_json(STATUS_PATH, { checked_at: Time.now.iso8601 })
+  rescue StandardError => e
+    # Keep the last good data; the app reports it as stale if this persists
+    LOGGER.error("Fetch failed: #{e.class}: #{e.message}")
   end
 
   sleep FETCH_INTERVAL_SECONDS

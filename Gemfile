@@ -1,7 +1,7 @@
 source 'https://rubygems.org'
 
-gem 'sinatra', '~> 4.0'
-gem 'icalendar', '~> 2.10'
-gem 'rackup', '~> 2.1'
-gem 'webrick', '~> 1.8'
-gem 'pry'
+gem 'sinatra', '~> 4.1'
+gem 'icalendar', '~> 2.11'
+gem 'ice_cube', '~> 0.17'
+gem 'rackup', '~> 2.2'
+gem 'puma', '~> 7.0'

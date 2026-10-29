@@ -2,3 +2,5 @@
 webcal.ics
 webcal_events.json
 webcal.ics.tmp
+webcal_status.json
+*.tmp

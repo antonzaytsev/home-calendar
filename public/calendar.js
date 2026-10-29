@@ -1,1098 +1,418 @@
-var TEMPLATES = {
-  calendarBodyWrapper:
-    '<div class="calendar-body-wrapper">' +
-      '<div class="calendar-body">' +
-        '<div class="calendar-row">' +
-          '{timeColumn}{dayColumns}'+
-        '</div>' +
-      '</div>' +
-    '</div>',
-  dayColumn: '<div class="day-column">' +
-               '<div class="hour-grid">{hourGrid}</div>' +
-               '{currentTimeIndicator}' +
-             '</div>',
-  timeColumn: '<div class="time-column">{timeSlots}</div>',
-  calendarHeader:
-    '<div class="calendar-header">' +
-      '<div class="header-row">' +
-        '<div class="time-header"></div>' +
-        '{dayHeaders}' +
-      '</div>' +
-      '{allDayRow}' +
-    '</div>',
-  allDayRow:
-    '<div class="all-day-row">' +
-      '<div class="all-day-label">Весь день</div>' +
-      '{allDayColumns}' +
-    '</div>',
-  event:
-    '<div class="event{pastClass}" style="top: {topPos}px; height: {height}px; left: {leftPercent}%; width: {widthPercent}%;">' +
-      '<div class="event-title">{title}</div>' +
-      '<div class="event-time">{timeString}</div>' +
-      '<div class="event-location{locationClass}">📍 {location}</div>' +
-    '</div>',
-  footer: '<div class="footer">'+
-            '<div class="footer-text">Последнее обновление: {lastUpdate} | Автообновление каждые {updateEveryMinutes} минут</div>'+
-            '<button class="settings-button" onclick="openSettings()" title="Настройки">Настройки</button>'+
-          '</div>',
-  settingsModal:
-    '<div class="modal-overlay" id="settings-modal" onclick="closeSettingsIfOutside(event)">' +
-      '<div class="modal-content" onclick="stopEventBubbling(event)">' +
-        '<table class="modal-table">' +
-          '<tr>' +
-            '<td class="modal-header">' +
-              '<h3>Настройки</h3>' +
-              '<button class="modal-close" onclick="closeSettings()">X</button>' +
-            '</td>' +
-          '</tr>' +
-          '<tr>' +
-            '<td class="modal-body">' +
-              '<div class="setting-group">' +
-                '<div class="setting-label">Количество видимых дней:</div>' +
-                '<div class="days-controls">' +
-                  '<div class="day-option"><input type="radio" name="totalDays" value="3" id="days3"><label for="days3">3 дня</label></div>' +
-                  '<div class="day-option"><input type="radio" name="totalDays" value="4" id="days4"><label for="days4">4 дня</label></div>' +
-                  '<div class="day-option"><input type="radio" name="totalDays" value="5" id="days5"><label for="days5">5 дней</label></div>' +
-                  '<div class="day-option"><input type="radio" name="totalDays" value="7" id="days7"><label for="days7">7 дней</label></div>' +
-                '</div>' +
-              '</div>' +
-            '</td>' +
-          '</tr>' +
-          '<tr>' +
-            '<td class="modal-footer">' +
-              '<button class="btn-save" onclick="saveSettings()">Сохранить</button>' +
-              '<button class="btn-cancel" onclick="closeSettings()">Отмена</button>' +
-            '</td>' +
-          '</tr>' +
-        '</table>' +
-      '</div>' +
-    '</div>',
-}
+'use strict';
 
-var calendar = {
-  currentDate: new Date(),
-  daysInPast: 1,
-  daysInFuture: 2,
-  totalDays: 4,
-  refreshPagePeriodSeconds: 60,
+const DAYS_IN_PAST = 1;
+const DAY_OPTIONS = [3, 4, 5, 7];
+const DEFAULT_TOTAL_DAYS = 4;
+const MINUTES_PER_DAY = 24 * 60;
+const MIN_EVENT_MINUTES = 20;
+const TICK_MS = 60 * 1000;
+const FALLBACK_REFRESH_MS = 5 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 15 * 1000;
+const UPDATES_SILENCE_MS = 70 * 1000;
+const IDLE_SCROLL_MS = 2 * 60 * 1000;
+const IDLE_RETURN_TODAY_MS = 10 * 60 * 1000;
+const STORAGE_KEY = 'calendar-settings';
+
+const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const WEEKDAYS = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
+
+const state = {
+  anchor: startOfDay(new Date()),
+  totalDays: DEFAULT_TOTAL_DAYS,
   events: {},
-  eventsLoaded: false,
-  lastKnownDate: null, // Track the last known current date for day change detection
+  loadedAt: null,
+  error: null,
+  stale: false,
+  request: null,
+  lastFetchAt: 0,
+  today: dateKey(new Date()),
+  lastInteraction: Date.now(),
+  updates: null,
+  lastUpdateMessage: 0,
+};
 
-  // Russian translations
-  monthNames: [null, 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
-  abbrDayNames: ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'],
-  translations: {
-    'All Day': 'Весь день',
-    'No Title': 'Без названия'
+const $ = (id) => document.getElementById(id);
+
+// ---- Dates ----
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date, days) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function pad(value) {
+  return String(value).padStart(2, '0');
+}
+
+function dateKey(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function parseDateKey(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return dateKey(date) === value ? date : null;
+}
+
+function formatTime(date) {
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function minutesSinceMidnight(date) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function visibleDates() {
+  const first = addDays(state.anchor, -DAYS_IN_PAST);
+  return Array.from({ length: state.totalDays }, (_, i) => addDays(first, i));
+}
+
+function isTodayVisible() {
+  return visibleDates().some((date) => dateKey(date) === state.today);
+}
+
+// ---- Rendering ----
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[char]));
+}
+
+function renderTitle(dates) {
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  let title;
+  if (first.getFullYear() !== last.getFullYear()) {
+    title = `${MONTHS[first.getMonth()]} ${first.getFullYear()} – ${MONTHS[last.getMonth()]} ${last.getFullYear()}`;
+  } else if (first.getMonth() !== last.getMonth()) {
+    title = `${MONTHS[first.getMonth()]}-${MONTHS[last.getMonth()]} ${first.getFullYear()}`;
+  } else {
+    title = `${MONTHS[first.getMonth()]} ${first.getFullYear()}`;
+  }
+  $('title').textContent = title;
+}
+
+function dayClasses(date) {
+  const day = date.getDay();
+  return [
+    dateKey(date) === state.today ? 'today' : '',
+    day === 0 || day === 6 ? 'weekend' : '',
+  ].join(' ');
+}
+
+function renderDayHeaders(dates) {
+  $('day-headers').innerHTML = '<div></div>' + dates.map((date) =>
+    `<div class="day-header ${dayClasses(date)}">${WEEKDAYS[date.getDay()]} ${date.getDate()}</div>`
+  ).join('');
+}
+
+function renderAllDayRow(dates) {
+  const columns = dates.map((date) => {
+    const events = (state.events[dateKey(date)] || []).filter((event) => event.all_day);
+    const html = events.map((event) => {
+      const past = event.end <= state.today ? ' past' : '';
+      return `<div class="all-day-event${past}" title="${escapeHtml(event.summary)}">${escapeHtml(event.summary)}</div>`;
+    }).join('');
+    return { html, count: events.length, today: dateKey(date) === state.today };
+  });
+
+  const row = $('all-day-row');
+  row.hidden = !columns.some((column) => column.count > 0);
+  row.innerHTML = '<div class="all-day-label">Весь день</div>' + columns.map((column) =>
+    `<div class="all-day-column${column.today ? ' today' : ''}">${column.html}</div>`
+  ).join('');
+}
+
+// Assign overlapping events to side-by-side columns, per cluster of overlaps
+function layoutTimedEvents(events, dayStart) {
+  const dayEnd = dayStart.getTime() + MINUTES_PER_DAY * 60000;
+  const items = events.map((event) => {
+    const start = new Date(event.start);
+    const end = new Date(event.end);
+    const top = Math.max(0, (start - dayStart) / 60000);
+    const bottom = Math.min(MINUTES_PER_DAY, (Math.min(end, dayEnd) - dayStart) / 60000);
+    const height = Math.max(bottom - top, MIN_EVENT_MINUTES);
+    return { event, start, end, top, height, visualEnd: top + height };
+  }).sort((a, b) => a.top - b.top || b.height - a.height);
+
+  let cluster = [];
+  let columnEnds = [];
+  let clusterEnd = -1;
+  const finishCluster = () => {
+    cluster.forEach((item) => { item.columns = columnEnds.length; });
+    cluster = [];
+    columnEnds = [];
+  };
+
+  for (const item of items) {
+    if (item.top >= clusterEnd) finishCluster();
+    let column = columnEnds.findIndex((end) => end <= item.top);
+    if (column === -1) {
+      column = columnEnds.length;
+      columnEnds.push(item.visualEnd);
+    } else {
+      columnEnds[column] = item.visualEnd;
+    }
+    item.column = column;
+    cluster.push(item);
+    clusterEnd = Math.max(clusterEnd, item.visualEnd);
+  }
+  finishCluster();
+  return items;
+}
+
+function renderTimedEvents(date, now) {
+  const events = (state.events[dateKey(date)] || []).filter((event) => !event.all_day);
+  return layoutTimedEvents(events, date).map((item) => {
+    const past = item.end < now ? ' past' : '';
+    let position = `top:${item.top + 1}px;height:${item.height - 2}px;`;
+    if (item.columns > 1) {
+      const width = 98 / item.columns;
+      position += `left:${1 + item.column * width}%;width:${width}%;`;
+    }
+    const summary = escapeHtml(item.event.summary);
+    return `<div class="event${past}" style="${position}" title="${summary}">` +
+             `<div class="event-title">${summary}</div>` +
+             `<div class="event-time">${formatTime(item.start)} - ${formatTime(item.end)}</div>` +
+           '</div>';
+  }).join('');
+}
+
+function renderGrid(dates) {
+  const now = new Date();
+  let html = '<div class="time-column">';
+  for (let hour = 0; hour < 24; hour++) html += `<div class="time-slot">${hour}:00</div>`;
+  html += '</div>';
+
+  for (const date of dates) {
+    const isToday = dateKey(date) === state.today;
+    const timeLine = isToday ? `<div class="current-time-line" style="top:${minutesSinceMidnight(now)}px"></div>` : '';
+    html += `<div class="day-column ${dayClasses(date)}">${timeLine}${renderTimedEvents(date, now)}</div>`;
+  }
+  $('grid').innerHTML = html;
+}
+
+function renderStatus() {
+  const status = $('status');
+  const parts = [];
+  if (state.loadedAt) {
+    parts.push(`Обновлено: ${pad(state.loadedAt.getDate())}.${pad(state.loadedAt.getMonth() + 1)} ${formatTime(state.loadedAt)}`);
+  }
+  if (state.error) parts.push(`⚠ ${state.error}`);
+  else if (state.stale) parts.push('⚠ Календарь давно не синхронизировался с iCloud');
+  status.textContent = parts.join(' · ') || 'Загрузка…';
+  status.classList.toggle('warning', Boolean(state.error || state.stale));
+}
+
+function render() {
+  const dates = visibleDates();
+  document.documentElement.style.setProperty('--days', dates.length);
+  renderTitle(dates);
+  renderDayHeaders(dates);
+  renderAllDayRow(dates);
+  renderGrid(dates);
+  renderStatus();
+}
+
+function scrollToNow() {
+  if (!isTodayVisible()) return;
+  // The grid starts right below the sticky header, so scroll offset equals minutes shown above the fold
+  window.scrollTo({ top: Math.max(0, minutesSinceMidnight(new Date()) - 3 * 60) });
+}
+
+// ---- Data ----
+
+async function loadEvents() {
+  const dates = visibleDates();
+  const from = dateKey(dates[0]);
+  const to = dateKey(dates[dates.length - 1]);
+
+  state.request?.abort();
+  const controller = new AbortController();
+  state.request = controller;
+  state.lastFetchAt = Date.now();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`/events?start_date=${from}&end_date=${to}`, {
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || `Ошибка сервера (${response.status})`);
+    }
+    const data = await response.json();
+    if (state.request !== controller) return; // superseded by a newer request
+
+    state.events = data.events || {};
+    state.stale = Boolean(data.stale);
+    state.loadedAt = new Date();
+    state.error = null;
+  } catch (error) {
+    if (state.request !== controller) return; // superseded by a newer request
+    if (error.name === 'AbortError') state.error = 'Сервер не отвечает';
+    else if (error instanceof SyntaxError) state.error = 'Некорректный ответ сервера';
+    else if (error instanceof TypeError) state.error = 'Нет связи с сервером';
+    else state.error = error.message;
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (state.request === controller) {
+    state.request = null;
+    render();
   }
 }
 
-function isIPad1() {
-    return navigator.userAgent.indexOf('iPad;') !== -1
+// Server-sent events: the server pushes a message whenever the calendar data changes
+function connectUpdates() {
+  // A replacement connection may have missed changes, so reload once it opens
+  let reconnected = Boolean(state.updates);
+  state.updates?.close();
+  const source = new EventSource('/updates');
+  state.updates = source;
+  state.lastUpdateMessage = Date.now();
+
+  source.addEventListener('open', () => {
+    state.lastUpdateMessage = Date.now();
+    // Catch up on anything missed while disconnected
+    if (reconnected) loadEvents();
+    reconnected = true;
+  });
+  source.addEventListener('ping', () => { state.lastUpdateMessage = Date.now(); });
+  source.addEventListener('changed', () => {
+    state.lastUpdateMessage = Date.now();
+    loadEvents();
+  });
 }
 
-function adjustEventTimeForIPad1(dateTimeString) {
-    if (!isIPad1()) {
-        return dateTimeString;
-    }
-
-    try {
-        var date = new Date(dateTimeString);
-        if (isNaN(date.getTime())) {
-            return dateTimeString;
-        }
-
-        date.setTime(date.getTime() - 3600000);
-        return date.toISOString();
-    } catch (e) {
-        return dateTimeString;
-    }
+function checkUpdatesConnection() {
+  const source = state.updates;
+  const silent = Date.now() - state.lastUpdateMessage > UPDATES_SILENCE_MS;
+  if (!source || source.readyState === EventSource.CLOSED || silent) connectUpdates();
 }
 
-function getUrlParameter(name) {
-    var search = window.location.search.substring(1);
-    var params = search.split('&');
-    for (var i = 0; i < params.length; i++) {
-        var param = params[i].split('=');
-        if (param[0] === name) {
-            return decodeURIComponent(param[1]);
-        }
-    }
-    return null;
-}
-
-function parseDate(dateString) {
-  // ES3-compatible date parsing for YYYY-MM-DD format
-  if (!dateString) {
-    return new Date();
-  }
-
-  var parts = dateString.split('-');
-  if (parts.length !== 3) {
-    return new Date();
-  }
-
-  var year = parseInt(parts[0], 10);
-  var month = parseInt(parts[1], 10) - 1; // Month is 0-based in JavaScript
-  var day = parseInt(parts[2], 10);
-
-  // Validate the parts
-  if (isNaN(year) || isNaN(month) || isNaN(day)) {
-    return new Date();
-  }
-
-  if (year < 1970 || year > 2100 || month < 0 || month > 11 || day < 1 || day > 31) {
-    return new Date();
-  }
-
-  return new Date(year, month, day);
-}
-
-function getWeekDates() {
-    var startDay = new Date(calendar.currentDate);
-    startDay.setDate(startDay.getDate() - calendar.daysInPast);
-
-    var dates = [];
-    for (var i = 0; i < calendar.totalDays; i++) {
-        var currentDay = new Date(startDay);
-        currentDay.setDate(startDay.getDate() + i);
-        dates.push(currentDay);
-    }
-    return dates;
-}
-
-function formatDate(date) {
-    var year = date.getFullYear();
-    var month = ('0' + (date.getMonth() + 1)).slice(-2);
-    var day = ('0' + date.getDate()).slice(-2);
-    return year + '-' + month + '-' + day;
-}
-
-function isToday(date) {
-    var today = new Date();
-    return date.getFullYear() === today.getFullYear() &&
-           date.getMonth() === today.getMonth() &&
-           date.getDate() === today.getDate();
-}
-
-function isWeekend(date) {
-    return date.getDay() === 0 || date.getDay() === 6;
-}
-
-function getUniqueMonths(dates) {
-    var months = [];
-    for (var i = 0; i < dates.length; i++) {
-        var month = dates[i].getMonth();
-        var found = false;
-        for (var j = 0; j < months.length; j++) {
-            if (months[j] === month) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            months.push(month);
-        }
-    }
-    return months;
-}
-
-function generateHeader(weekDates) {
-    var firstDate = weekDates[0];
-    var lastDate = weekDates[weekDates.length - 1];
-
-    var currentReferenceDate = weekDates[calendar.daysInPast];
-    var prevWeekDate = new Date(currentReferenceDate);
-    prevWeekDate.setDate(prevWeekDate.getDate() - calendar.totalDays);
-    var nextWeekDate = new Date(currentReferenceDate);
-    nextWeekDate.setDate(nextWeekDate.getDate() + calendar.totalDays);
-
-    var months = getUniqueMonths([firstDate, lastDate]);
-    var monthDisplayParts = [];
-    for (var i = 0; i < months.length; i++) {
-        monthDisplayParts.push(calendar.monthNames[months[i] + 1]);
-    }
-    var monthDisplay = monthDisplayParts.join('-');
-
-    return '<div class="header">' +
-                '<div class="header-nav">' +
-                    '<button class="nav-button" onclick="calendarPrev()" title="Предыдущие дни">‹ назад</button>' +
-                    '<button class="nav-button" onclick="calendarToday()" title="На сегодня" style="margin-left: 8px;">сегодня</button>' +
-                '</div>' +
-                '<h1>' + monthDisplay + ' ' + firstDate.getFullYear() + '</h1>' +
-                '<div class="header-nav">' +
-                    '<button class="nav-button" onclick="calendarNext()" title="Следующие дни">вперед ›</button>' +
-                '</div>' +
-            '</div>';
-}
-
-function generateCalendarHeader(weekDates) {
-    var dayHeaders = '';
-    var allDayColumns = '';
-    var hasAllDayEvents = false;
-
-    for (var i = 0; i < weekDates.length; i++) {
-        var date = weekDates[i];
-        var todayClass = isToday(date) ? ' today' : '';
-        var weekendClass = isWeekend(date) ? ' weekend' : '';
-
-        dayHeaders += '<div class="day-header' + todayClass + weekendClass + '">' +
-                        '<div class="day-name">' + calendar.abbrDayNames[date.getDay()].toUpperCase() + ' ' + date.getDate() + '</div>' +
-                      '</div>';
-
-        // Generate all-day events column for this date
-        var allDayEventsHtml = '';
-        if (calendar.eventsLoaded) {
-            allDayEventsHtml = generateAllDayEventsForDate(date);
-            if (allDayEventsHtml !== '') {
-                hasAllDayEvents = true;
-            }
-        }
-        allDayColumns += '<div class="all-day-column' + todayClass + '">' + allDayEventsHtml + '</div>';
-    }
-
-    // Only include all-day row if there are all-day events
-    var allDayRow = '';
-    if (hasAllDayEvents) {
-        allDayRow = formatTemplate('allDayRow', {allDayColumns: allDayColumns});
-    }
-
-    return formatTemplate(
-        'calendarHeader',
-        {dayHeaders: dayHeaders, allDayRow: allDayRow}
-    );
-}
-
-function generateTimeColumn() {
-    var timeSlots = '';
-    for (var hour = 0; hour <= 23; hour++) {
-        timeSlots += '<div class="time-slot">' + hour + ':00</div>';
-    }
-
-  return formatTemplate(
-    'timeColumn',
-    {timeSlots: timeSlots}
-  )
-}
-
-function generateDayColumn(date) {
-    var today = new Date();
-    var currentTimeIndicator = isToday(date) ?
-        '<div class="current-time-line" style="top: ' + (today.getHours() * 60 + today.getMinutes()) + 'px;"></div>' : '';
-
-    var hourGrid = '';
-    for (var hour = 0; hour <= 23; hour++) {
-        hourGrid += '<div class="hour-line"><div class="half-hour-line"></div></div>';
-    }
-
-    return formatTemplate(
-      'dayColumn',
-      {hourGrid: hourGrid, currentTimeIndicator: currentTimeIndicator}
-    )
-}
-
-function generateCalendarBody(weekDates) {
-    var dayColumns = '';
-    for (var i = 0; i < weekDates.length; i++) {
-        dayColumns += generateDayColumn(weekDates[i]);
-    }
-
-  return formatTemplate(
-    'calendarBodyWrapper',
-    {timeColumn: generateTimeColumn(), dayColumns: dayColumns}
-  )
-}
-
-function generateFooter() {
-    var now = new Date();
-    var day = ('0' + now.getDate()).slice(-2);
-    var month = ('0' + (now.getMonth() + 1)).slice(-2);
-    var year = now.getFullYear();
-    var hours = ('0' + now.getHours()).slice(-2);
-    var minutes = ('0' + now.getMinutes()).slice(-2);
-    var timeString = day + '.' + month + '.' + year + ' ' + hours + ':' + minutes;
-
-    return formatTemplate('footer', { lastUpdate: timeString, updateEveryMinutes: calendar.refreshPagePeriodSeconds / 60 })
-}
-
-function hasToday(weekDates) {
-    for (var i = 0; i < weekDates.length; i++) {
-        if (isToday(weekDates[i])) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function renderCalendar() {
-    var weekDates = getWeekDates();
-    var container = document.getElementsByClassName('calendar-container')[0];
-
-    if (!container) {
-        // Extra fallback
-        var containers = document.getElementsByTagName('div');
-        for (var i = 0; i < containers.length; i++) {
-            if (containers[i].className === 'calendar-container') {
-                container = containers[i];
-                break;
-            }
-        }
-    }
-
-    if (container) {
-        var calendarBody = calendar.eventsLoaded ?
-            generateCalendarBodyWithEvents(weekDates) :
-            generateCalendarBody(weekDates);
-
-        container.innerHTML = generateHeader(weekDates) +
-                             generateCalendarHeader(weekDates) +
-                             calendarBody +
-                             generateFooter() +
-                             formatTemplate('settingsModal', {});
-
-        // Adjust padding-top for calendar container based on all-day events height
-        var allDayHeight = calculateAllDayHeight(weekDates);
-        var basePadding = 70; // Base header height
-        var totalPadding = basePadding + allDayHeight;
-        container.style.paddingTop = totalPadding + 'px';
-    }
-
-    // Auto-scroll to current time if today is visible
-    if (hasToday(weekDates)) {
-        var currentHour = new Date().getHours();
-        var baseOffset = 70; // Base header height
-        var allDayHeight = calculateAllDayHeight(weekDates);
-        var scrollTop = Math.max(0, (currentHour - 5) * 60) + baseOffset + allDayHeight;
-        setTimeout(function() {
-            window.scrollTo(0, scrollTop);
-        }, 300);
-    }
-}
-
-function calculateAllDayHeight(weekDates) {
-    if (!calendar.eventsLoaded) {
-        return 0;
-    }
-
-    var maxAllDayEvents = 0;
-    var hasAnyAllDayEvents = false;
-
-    for (var i = 0; i < weekDates.length; i++) {
-        var dateKey = formatDate(weekDates[i]);
-        var dayEvents = calendar.events[dateKey] || [];
-        var allDayCount = 0;
-
-        for (var j = 0; j < dayEvents.length; j++) {
-            if (dayEvents[j].all_day) {
-                allDayCount++;
-                hasAnyAllDayEvents = true;
-            }
-        }
-
-        if (allDayCount > maxAllDayEvents) {
-            maxAllDayEvents = allDayCount;
-        }
-    }
-
-    // If no all-day events, return 0 (no all-day row shown)
-    if (!hasAnyAllDayEvents) {
-        return 0;
-    }
-
-    // Each all-day event is about 24px high (20px + 2px margin + 2px padding)
-    // Plus base height for the all-day row header (about 30px minimum)
-    return maxAllDayEvents * 24 + 35; // Base row height + events height
-}
+// ---- Navigation and settings ----
 
 function updateUrl() {
-    var weekDates = getWeekDates();
-    var referenceDate = weekDates[calendar.daysInPast];
-    var dateString = formatDate(referenceDate);
-
-    try {
-        if (window.history && window.history.pushState) {
-            var newUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
-
-            if (!isToday(calendar.currentDate)) {
-              newUrl += '?date=' + dateString
-            }
-            window.history.pushState({}, '', newUrl);
-        }
-    } catch (e) {
-        // Ignore history errors on old devices
-    }
+  const url = new URL(window.location.href);
+  if (dateKey(state.anchor) === state.today) url.searchParams.delete('date');
+  else url.searchParams.set('date', dateKey(state.anchor));
+  window.history.replaceState(null, '', url);
 }
 
-function startTimeUpdater() {
-    setInterval(function() {
-        var now = new Date();
-        var minutes = now.getHours() * 60 + now.getMinutes();
-        var currentTimeLine = document.getElementsByClassName('current-time-line')[0];
-
-        if (currentTimeLine) {
-            currentTimeLine.style.top = minutes + 'px';
-        }
-    }, 60000); // Update every minute
+function navigate(anchor) {
+  state.anchor = startOfDay(anchor);
+  updateUrl();
+  render();
+  scrollToNow();
+  loadEvents();
 }
 
-function calendarPrev() {
-    var date = new Date(calendar.currentDate);
-    date.setDate(date.getDate() - calendar.totalDays);
-    calendar.currentDate = date;
-
-    updateUrl();
-    renderCalendar();
-    loadEventsForCurrentWeek();
-}
-
-function calendarNext() {
-    var date = new Date(calendar.currentDate);
-    date.setDate(date.getDate() + calendar.totalDays);
-    calendar.currentDate = date;
-
-    updateUrl();
-    renderCalendar();
-    loadEventsForCurrentWeek();
-}
-
-function calendarToday() {
-    calendar.currentDate = new Date();
-    updateUrl();
-    renderCalendar();
-    loadEventsForCurrentWeek();
-}
-
-// ES3-compatible AJAX function
-function createXMLHttpRequest() {
-    if (window.XMLHttpRequest) {
-        return new XMLHttpRequest();
-    } else if (window.ActiveXObject) {
-        // For older IE versions
-        try {
-            return new ActiveXObject('Microsoft.XMLHTTP');
-        } catch (e) {
-            return null;
-        }
-    }
-    return null;
-}
-
-function loadEvents(startDate, endDate, callback) {
-    var xhr = createXMLHttpRequest();
-    if (!xhr) {
-        if (callback) callback(null, 'AJAX not supported');
-        return;
-    }
-
-    var url = '/events?start_date=' + formatDate(startDate) + '&end_date=' + formatDate(endDate);
-
-    xhr.open('GET', url, true);
-    xhr.onreadystatechange = function() {
-        if (xhr.readyState === 4) {
-            if (xhr.status === 200) {
-                try {
-                    var data = JSON.parse(xhr.responseText);
-                    if (callback) callback(data, null);
-                } catch (e) {
-                    if (callback) callback(null, 'Invalid JSON response');
-                }
-            } else {
-                if (callback) callback(null, 'HTTP error: ' + xhr.status);
-            }
-        }
-    };
-    xhr.send();
-}
-
-function loadEventsForCurrentWeek() {
-    var weekDates = getWeekDates();
-    var startDate = weekDates[0];
-    var endDate = weekDates[weekDates.length - 1];
-
-    loadEvents(startDate, endDate, function(data, error) {
-        if (error) {
-            // Show error in footer or ignore silently
-            return;
-        }
-
-        if (data && data.events) {
-            if (isIPad1()) {
-                var adjustedEvents = {};
-                for (var dateKey in data.events) {
-                    adjustedEvents[dateKey] = [];
-                    for (var i = 0; i < data.events[dateKey].length; i++) {
-                        var event = data.events[dateKey][i];
-                        var adjustedEvent = {
-                            uid: event.uid,
-                            summary: event.summary,
-                            description: event.description,
-                            location: event.location,
-                            all_day: event.all_day
-                        };
-
-                        // Adjust times for non-all-day events only
-                        if (!event.all_day && event.start && event.end) {
-                            adjustedEvent.start = adjustEventTimeForIPad1(event.start);
-                            adjustedEvent.end = adjustEventTimeForIPad1(event.end);
-                        } else {
-                            adjustedEvent.start = event.start;
-                            adjustedEvent.end = event.end;
-                        }
-
-                        // Copy any additional properties
-                        if (event.rrule) adjustedEvent.rrule = event.rrule;
-                        if (event.exdate) adjustedEvent.exdate = event.exdate;
-
-                        adjustedEvents[dateKey].push(adjustedEvent);
-                    }
-                }
-                calendar.events = adjustedEvents;
-            } else {
-                calendar.events = data.events;
-            }
-            calendar.eventsLoaded = true;
-            renderCalendar();
-        }
-    });
-}
-
-function generateCalendarBodyWithEvents(weekDates) {
-    var dayColumns = '';
-    for (var i = 0; i < weekDates.length; i++) {
-        dayColumns += generateDayColumnWithEvents(weekDates[i]);
-    }
-
-    return formatTemplate(
-        'calendarBodyWrapper',
-        {timeColumn: generateTimeColumn(), dayColumns: dayColumns}
-    );
-}
-
-function generateDayColumnWithEvents(date) {
-    var today = new Date();
-    var currentTimeIndicator = isToday(date) ?
-        '<div class="current-time-line" style="top: ' + (today.getHours() * 60 + today.getMinutes()) + 'px;"></div>' : '';
-
-    var hourGrid = '';
-    for (var hour = 0; hour <= 23; hour++) {
-        hourGrid += '<div class="hour-line"><div class="half-hour-line"></div></div>';
-    }
-
-    // Add events for this date
-    var eventsHtml = generateEventsForDate(date);
-
-    return formatTemplate(
-        'dayColumn',
-        {hourGrid: hourGrid, currentTimeIndicator: currentTimeIndicator + eventsHtml}
-    );
-}
-
-function generateEventsForDate(date) {
-    var dateKey = formatDate(date);
-    var dayEvents = calendar.events[dateKey] || [];
-
-    if (dayEvents.length === 0) {
-        return '';
-    }
-
-    var timedEvents = [];
-
-    // Only process timed events here - all-day events are handled in the header
-    for (var i = 0; i < dayEvents.length; i++) {
-        if (!dayEvents[i].all_day) {
-            timedEvents.push(dayEvents[i]);
-        }
-    }
-
-    var eventsHtml = '';
-
-    // Calculate layout for overlapping timed events
-    var eventsWithLayout = calculateEventsLayout(timedEvents);
-
-    // Render timed events with layout
-    for (var i = 0; i < eventsWithLayout.length; i++) {
-        eventsHtml += generateTimedEventWithLayout(eventsWithLayout[i]);
-    }
-
-    return eventsHtml;
-}
-
-function generateAllDayEventsForDate(date) {
-    var dateKey = formatDate(date);
-    var dayEvents = calendar.events[dateKey] || [];
-
-    if (dayEvents.length === 0) {
-        return '';
-    }
-
-    var allDayEvents = [];
-
-    // Only process all-day events
-    for (var i = 0; i < dayEvents.length; i++) {
-        if (dayEvents[i].all_day) {
-            allDayEvents.push(dayEvents[i]);
-        }
-    }
-
-    var eventsHtml = '';
-
-    // Render all-day events for header
-    for (var i = 0; i < allDayEvents.length; i++) {
-        eventsHtml += generateAllDayEventForHeader(allDayEvents[i], i);
-    }
-
-    return eventsHtml;
-}
-
-function generateAllDayEventForHeader(event, index) {
-    var isPast = isEventPast(event);
-    var pastClass = isPast ? ' past-event' : '';
-
-    return '<div class="all-day-event-header' + pastClass + '" style="margin-bottom: 2px;">' +
-               '<div class="event-title">' + (event.summary || calendar.translations['No Title']) + '</div>' +
-           '</div>';
-}
-
-function calculateEventsLayout(timedEvents) {
-  const widthPercent = 98
-
-    if (timedEvents.length === 0) {
-        return [];
-    }
-
-    // Sort events by start time
-    var sortedEvents = timedEvents.slice().sort(function(a, b) {
-        var startA = new Date(a.start);
-        var startB = new Date(b.start);
-        return startA.getTime() - startB.getTime();
-    });
-
-    var eventsWithLayout = [];
-    var columns = [];
-
-    for (var i = 0; i < sortedEvents.length; i++) {
-        var event = sortedEvents[i];
-
-        var columnIndex = -1;
-        for (var j = 0; j < columns.length; j++) {
-            var canFit = true;
-            for (var k = 0; k < columns[j].length; k++) {
-                var existingEvent = columns[j][k];
-                if (eventsOverlap(event, existingEvent)) {
-                    canFit = false;
-                    break;
-                }
-            }
-            if (canFit) {
-                columnIndex = j;
-                break;
-            }
-        }
-
-        if (columnIndex === -1) {
-            columns.push([]);
-            columnIndex = columns.length - 1;
-        }
-
-        columns[columnIndex].push(event);
-
-        var totalColumns = columns.length;
-        var width = (widthPercent / totalColumns);
-        var left = 1 + (columnIndex * (widthPercent / totalColumns));
-
-        eventsWithLayout.push({
-            event: event,
-            layout: {
-                width: width,
-                left: left,
-                column: columnIndex,
-                totalColumns: totalColumns
-            }
-        });
-    }
-
-    var finalColumnCount = columns.length;
-
-    for (var i = 0; i < eventsWithLayout.length; i++) {
-        var currentEvent = eventsWithLayout[i].event;
-        var hasOverlaps = false;
-
-        for (var j = 0; j < sortedEvents.length; j++) {
-            if (sortedEvents[j] !== currentEvent && eventsOverlap(currentEvent, sortedEvents[j])) {
-                hasOverlaps = true;
-                break;
-            }
-        }
-
-        var layout = eventsWithLayout[i].layout;
-
-        if (hasOverlaps) {
-            layout.width = widthPercent / finalColumnCount;
-            layout.left = 1 + (layout.column * (widthPercent / finalColumnCount));
-            layout.totalColumns = finalColumnCount;
-            layout.hasOverlaps = true;
-        } else {
-            layout.width = null;
-            layout.left = null;
-            layout.totalColumns = 1;
-            layout.hasOverlaps = false;
-        }
-    }
-
-    return eventsWithLayout;
-}
-
-function eventsOverlap(event1, event2) {
-    var start1 = new Date(event1.start);
-    var end1 = new Date(event1.end);
-    var start2 = new Date(event2.start);
-    var end2 = new Date(event2.end);
-
-    return start1 < end2 && start2 < end1;
-}
-
-function generateTimedEventWithLayout(eventWithLayout) {
-    var event = eventWithLayout.event;
-    var layout = eventWithLayout.layout;
-    var isPast = isEventPast(event);
-    var pastClass = isPast ? ' past-event' : '';
-
-    var topPos = getEventTopPosition(event) + 1;
-    var height = getEventHeight(event) - 2;
-
-    if (layout.width === null && layout.left === null) {
-        return '<div class="event' + pastClass + '" style="top: ' + topPos + 'px; height: ' + height + 'px;">' +
-               '<div class="event-title">' + (event.summary || calendar.translations['No Title']) + '</div>' +
-               '<div class="event-time">' + formatEventTime(event) + '</div>' +
-               '<div class="event-location hide">' + (event.location || '') + '</div>' +
-               '</div>';
-    }
-
-    var leftPercent = layout.left;
-    var widthPercent = layout.width;
-
-    return formatTemplate(
-      'event',
-      {
-        pastClass: pastClass,
-        topPos: topPos,
-        height: height,
-        leftPercent: leftPercent,
-        widthPercent: widthPercent,
-        title: event.summary || calendar.translations['No Title'],
-        timeString: formatEventTime(event),
-        // location: event.location,
-        // locationClass: event.location ? '' : ' hide'
-        locationClass: ' hide'
-      }
-    )
-}
-
-function isEventPast(event) {
-    var now = new Date();
-    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    if (event.all_day) {
-        var eventDate = parseDate(event.start.split('T')[0]);
-        return eventDate < today;
-    } else {
-        var eventEnd = new Date(event.end);
-        return eventEnd < now;
-    }
-}
-
-function getEventTopPosition(event) {
-    if (event.all_day) return 0;
-
-    try {
-        var startTime = new Date(event.start);
-        return startTime.getHours() * 60 + startTime.getMinutes();
-    } catch (e) {
-        return 0;
-    }
-}
-
-function getEventHeight(event) {
-    if (event.all_day) return 20;
-
-    try {
-        var startTime = new Date(event.start);
-        var endTime = new Date(event.end);
-        var startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
-        var endMinutes = endTime.getHours() * 60 + endTime.getMinutes();
-        var duration = endMinutes - startMinutes;
-        return Math.max(duration, 20);
-    } catch (e) {
-        return 20;
-    }
-}
-
-function formatEventTime(event) {
-    if (event.all_day) return calendar.translations['All Day'];
-
-    try {
-        var startTime = new Date(event.start);
-        var endTime = new Date(event.end);
-        var startStr = ('0' + startTime.getHours()).slice(-2) + ':' + ('0' + startTime.getMinutes()).slice(-2);
-        var endStr = ('0' + endTime.getHours()).slice(-2) + ':' + ('0' + endTime.getMinutes()).slice(-2);
-        return startStr + ' - ' + endStr;
-    } catch (e) {
-        return calendar.translations['All Day'];
-    }
-}
-
-function checkForDayChange() {
-    var today = new Date();
-    var todayDateString = formatDate(today);
-
-    if (!calendar.lastKnownDate) {
-        calendar.lastKnownDate = todayDateString;
-        return false;
-    }
-
-    if (calendar.lastKnownDate !== todayDateString) {
-        calendar.lastKnownDate = todayDateString;
-        return true;
-    }
-
-    return false;
-}
-
-function handleDayChange() {
-    calendar.currentDate = new Date();
-    updateUrl();
-    renderCalendar();
-    loadEventsForCurrentWeek();
-}
-
-function startPeriodicEventUpdates() {
-    setInterval(function() {
-        if (checkForDayChange()) {
-            handleDayChange();
-        } else {
-            loadEventsForCurrentWeek();
-        }
-    }, calendar.refreshPagePeriodSeconds * 1000);
-}
-
-function initCalendar() {
-    // Load settings first
-    loadSettings();
-
-    var dateParam = getUrlParameter('date');
-    if (dateParam) {
-        try {
-            calendar.currentDate = parseDate(dateParam);
-        } catch (e) {
-            calendar.currentDate = new Date();
-        }
-    }
-
-    var today = new Date();
-    calendar.lastKnownDate = formatDate(today);
-
-    renderCalendar();
-    loadEventsForCurrentWeek();
-    startTimeUpdater();
-    startPeriodicEventUpdates();
-}
-
-function formatTemplate(templateName, variables) {
-  var html = TEMPLATES[templateName]
-  if (html === undefined) {
-    alert('no such template ' + templateName)
-    html = ''
-  }
-  for (var key in variables) {
-    html = html.replace("{" + key + "}", variables[key])
-  }
-
-  return html
-}
-
-// Cookie helper functions for older browsers
-function setCookie(name, value, days) {
-  var expires = '';
-  if (days) {
-    var date = new Date();
-    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-    expires = '; expires=' + date.toUTCString();
-  }
-  document.cookie = name + '=' + encodeURIComponent(value) + expires + '; path=/';
-}
-
-function getCookie(name) {
-  var nameEQ = name + '=';
-  var cookies = document.cookie.split(';');
-  for (var i = 0; i < cookies.length; i++) {
-    var cookie = cookies[i];
-    while (cookie.charAt(0) === ' ') {
-      cookie = cookie.substring(1, cookie.length);
-    }
-    if (cookie.indexOf(nameEQ) === 0) {
-      return decodeURIComponent(cookie.substring(nameEQ.length, cookie.length));
-    }
-  }
-  return null;
-}
-
-// Settings modal functions - iPad 1 compatible
-// Always show one day before the current day; the rest are upcoming days
-function applyTotalDays(totalDays) {
-  calendar.totalDays = totalDays;
-  calendar.daysInPast = 1;
-  calendar.daysInFuture = totalDays - calendar.daysInPast - 1;
-}
-
-function stopEventBubbling(event) {
-  event = event || window.event;
-  if (event.stopPropagation) {
-    event.stopPropagation();
-  } else if (event.cancelBubble !== undefined) {
-    event.cancelBubble = true; // IE < 9
+function loadSettings() {
+  try {
+    const settings = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    if (DAY_OPTIONS.includes(settings.totalDays)) state.totalDays = settings.totalDays;
+  } catch (error) {
+    // Ignore unreadable settings and keep defaults
   }
 }
 
 function openSettings() {
-  var modal = document.getElementById('settings-modal');
-  if (modal) {
-    modal.style.display = 'block';
-
-    // Set current values in the modal
-    var currentTotalDays = calendar.totalDays;
-    var radios = document.getElementsByName('totalDays');
-    for (var i = 0; i < radios.length; i++) {
-      if (parseInt(radios[i].value, 10) === currentTotalDays) {
-        radios[i].checked = true;
-        break;
-      }
-    }
+  const dialog = $('settings');
+  for (const input of dialog.querySelectorAll('input[name="totalDays"]')) {
+    input.checked = Number(input.value) === state.totalDays;
   }
+  dialog.returnValue = '';
+  dialog.showModal();
 }
 
-function closeSettings() {
-  var modal = document.getElementById('settings-modal');
-  if (modal) {
-    modal.style.display = 'none';
-  }
-}
+function applySettings() {
+  const dialog = $('settings');
+  if (dialog.returnValue !== 'save') return;
 
-function closeSettingsIfOutside(event) {
-  event = event || window.event;
-  var target = event.target || event.srcElement;
-  if (target && target.id === 'settings-modal') {
-    closeSettings();
-  }
-}
+  const selected = Number(dialog.querySelector('input[name="totalDays"]:checked')?.value);
+  if (!DAY_OPTIONS.includes(selected) || selected === state.totalDays) return;
 
-function saveSettings() {
-  var radios = document.getElementsByName('totalDays');
-  var selectedDays = null;
-
-  for (var i = 0; i < radios.length; i++) {
-    if (radios[i].checked) {
-      selectedDays = parseInt(radios[i].value, 10);
-      break;
-    }
-  }
-
-  if (selectedDays && selectedDays !== calendar.totalDays) {
-    applyTotalDays(selectedDays);
-
-    // Save to localStorage with fallback for older browsers
-    saveSettingsToStorage();
-
-    // Re-render calendar and reload events
-    renderCalendar();
-    loadEventsForCurrentWeek();
-  }
-
-  closeSettings();
-}
-
-function saveSettingsToStorage() {
-  var settingsObj = {
-    totalDays: calendar.totalDays
-  };
-  
-  var settingsStr;
-  if (typeof JSON !== 'undefined' && JSON.stringify) {
-    settingsStr = JSON.stringify(settingsObj);
-  } else {
-    // Fallback for browsers without JSON support
-    settingsStr = '{"totalDays":' + calendar.totalDays + '}';
-  }
-  
-  // Try localStorage first
+  state.totalDays = selected;
   try {
-    if (typeof localStorage !== 'undefined' && localStorage.setItem) {
-      localStorage.setItem('calendar-settings', settingsStr);
-      return; // Success, exit function
-    }
-  } catch (e) {
-    // localStorage failed, try cookies
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ totalDays: selected }));
+  } catch (error) {
+    // Storage unavailable; the setting applies until reload
   }
-  
-  // Fall back to cookies (expires in 365 days)
-  try {
-    setCookie('calendar-settings', settingsStr, 365);
-  } catch (e) {
-    // Even cookies failed, settings won't persist
-  }
+  render();
+  loadEvents();
 }
 
-function loadSettings() {
-  var settingsStr = null;
-  
-  // Try localStorage first
-  try {
-    if (typeof localStorage !== 'undefined' && localStorage.getItem) {
-      settingsStr = localStorage.getItem('calendar-settings');
-    }
-  } catch (e) {
-    // localStorage failed
-  }
-  
-  // If localStorage didn't work or had no data, try cookies
-  if (!settingsStr) {
-    try {
-      settingsStr = getCookie('calendar-settings');
-    } catch (e) {
-      // Cookies also failed
+// ---- Periodic work ----
+
+function tick() {
+  const today = dateKey(new Date());
+  const dayChanged = today !== state.today;
+  const idle = Date.now() - state.lastInteraction;
+
+  if (dayChanged) {
+    const wasShowingToday = dateKey(state.anchor) === state.today;
+    state.today = today;
+    if (wasShowingToday) {
+      navigate(new Date());
+      return;
     }
   }
-  
-  // Parse and apply settings if we found any
-  if (settingsStr) {
-    try {
-      var settings;
-      if (typeof JSON !== 'undefined' && JSON.parse) {
-        settings = JSON.parse(settingsStr);
-      } else {
-        // Very basic fallback parsing for simple JSON structure
-        try {
-          settings = eval('(' + settingsStr + ')');
-        } catch (evalError) {
-          return; // Skip if can't parse
-        }
-      }
-      
-      if (settings && settings.totalDays) {
-        applyTotalDays(settings.totalDays);
-      }
-    } catch (e) {
-      // Error parsing settings, use defaults
-    }
+
+  if (idle > IDLE_RETURN_TODAY_MS && dateKey(state.anchor) !== state.today) {
+    navigate(new Date());
+    return;
   }
+
+  render();
+  if (idle > IDLE_SCROLL_MS) scrollToNow();
+  if (dayChanged || Date.now() - state.lastFetchAt > FALLBACK_REFRESH_MS) loadEvents();
+  checkUpdatesConnection();
 }
 
-if (document.addEventListener) {
-    document.addEventListener('DOMContentLoaded', function() {
-        initCalendar();
-    });
-} else {
-    window.onload = function() {
-        initCalendar();
-    };
+function init() {
+  loadSettings();
+  const dateParam = parseDateKey(new URLSearchParams(window.location.search).get('date'));
+  if (dateParam) state.anchor = dateParam;
+
+  document.addEventListener('click', (event) => {
+    const action = event.target.closest('[data-action]')?.dataset.action;
+    if (action === 'prev') navigate(addDays(state.anchor, -state.totalDays));
+    else if (action === 'next') navigate(addDays(state.anchor, state.totalDays));
+    else if (action === 'today') navigate(new Date());
+    else if (action === 'settings') openSettings();
+  });
+
+  const dialog = $('settings');
+  dialog.addEventListener('close', applySettings);
+  // Close when tapping the backdrop around the dialog
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dialog.close('cancel');
+  });
+
+  for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
+    window.addEventListener(type, () => { state.lastInteraction = Date.now(); }, { passive: true });
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      tick();
+      loadEvents();
+    }
+  });
+
+  render();
+  scrollToNow();
+  loadEvents();
+  connectUpdates();
+  setInterval(tick, TICK_MS);
 }
+
+init();
