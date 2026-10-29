@@ -176,10 +176,7 @@ function renderTimedEvents(date, now) {
   return layoutTimedEvents(events, date).map((item) => {
     const past = item.end < now ? ' past' : '';
     let position = `top:${item.top + 1}px;height:${item.height - 2}px;`;
-    if (item.columns > 1) {
-      const width = 98 / item.columns;
-      position += `left:${1 + item.column * width}%;width:${width}%;`;
-    }
+    if (item.columns > 1) position += `--column:${item.column};--columns:${item.columns};`;
     const summary = escapeHtml(item.event.summary);
     return `<div class="event${past}" style="${position}" title="${summary}">` +
              `<div class="event-title">${summary}</div>` +

@@ -222,10 +222,16 @@ button {
     border-radius: 50%;
 }
 
+/* Same inset from the day separators and gap between side-by-side events in every layout */
 .event {
+    --column: 0;
+    --columns: 1;
+    --event-inset: 3px;
+    --event-gap: 2px;
+    --column-step: calc((100% - 2 * var(--event-inset) + var(--event-gap)) / var(--columns));
     position: absolute;
-    left: 2%;
-    width: 96%;
+    left: calc(var(--event-inset) + var(--column) * var(--column-step));
+    width: calc(var(--column-step) - var(--event-gap));
     padding: 2px;
     border-radius: 4px;
     border-left: 3px solid var(--accent);
