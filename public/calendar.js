@@ -11,6 +11,9 @@ const REQUEST_TIMEOUT_MS = 15 * 1000;
 const UPDATES_SILENCE_MS = 70 * 1000;
 const IDLE_SCROLL_MS = 2 * 60 * 1000;
 const IDLE_RETURN_TODAY_MS = 10 * 60 * 1000;
+const SWIPE_MIN_DISTANCE_PX = 60;
+const SWIPE_MAX_DURATION_MS = 800;
+const SWIPE_EDGE_PX = 24; // leave screen edges to Android system gestures
 const STORAGE_KEY = 'calendar-settings';
 const RELOAD_KEY = 'calendar-reloaded-at';
 const MIN_RELOAD_INTERVAL_MS = 60 * 1000;
@@ -337,6 +340,37 @@ function navigate(anchor) {
   loadEvents();
 }
 
+function step(direction) {
+  navigate(addDays(state.anchor, direction * state.totalDays));
+}
+
+// Horizontal swipes act like the prev/next buttons; vertical scrolling is unaffected
+function setupSwipe() {
+  let swipe = null;
+
+  document.addEventListener('touchstart', (event) => {
+    const touch = event.touches[0];
+    const awayFromEdges = touch.clientX > SWIPE_EDGE_PX && touch.clientX < window.innerWidth - SWIPE_EDGE_PX;
+    swipe = event.touches.length === 1 && awayFromEdges && !$('settings').open
+      ? { x: touch.clientX, y: touch.clientY, time: Date.now() }
+      : null;
+  }, { passive: true });
+
+  document.addEventListener('touchend', (event) => {
+    if (!swipe) return;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - swipe.x;
+    const dy = touch.clientY - swipe.y;
+    const quick = Date.now() - swipe.time <= SWIPE_MAX_DURATION_MS;
+    swipe = null;
+    if (quick && Math.abs(dx) >= SWIPE_MIN_DISTANCE_PX && Math.abs(dx) > 2 * Math.abs(dy)) {
+      step(dx < 0 ? 1 : -1); // swipe left shows later days
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchcancel', () => { swipe = null; }, { passive: true });
+}
+
 function loadSettings() {
   try {
     const settings = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
@@ -406,11 +440,13 @@ function init() {
 
   document.addEventListener('click', (event) => {
     const action = event.target.closest('[data-action]')?.dataset.action;
-    if (action === 'prev') navigate(addDays(state.anchor, -state.totalDays));
-    else if (action === 'next') navigate(addDays(state.anchor, state.totalDays));
+    if (action === 'prev') step(-1);
+    else if (action === 'next') step(1);
     else if (action === 'today') navigate(new Date());
     else if (action === 'settings') openSettings();
   });
+
+  setupSwipe();
 
   const dialog = $('settings');
   dialog.addEventListener('close', applySettings);
