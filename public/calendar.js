@@ -12,6 +12,8 @@ const UPDATES_SILENCE_MS = 70 * 1000;
 const IDLE_SCROLL_MS = 2 * 60 * 1000;
 const IDLE_RETURN_TODAY_MS = 10 * 60 * 1000;
 const STORAGE_KEY = 'calendar-settings';
+const RELOAD_KEY = 'calendar-reloaded-at';
+const MIN_RELOAD_INTERVAL_MS = 60 * 1000;
 
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const WEEKDAYS = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
@@ -252,6 +254,7 @@ async function loadEvents() {
 
     state.events = data.events || {};
     state.stale = Boolean(data.stale);
+    reloadIfFrontendChanged(data.version);
     state.loadedAt = new Date();
     state.error = null;
   } catch (error) {
@@ -270,6 +273,22 @@ async function loadEvents() {
   }
 }
 
+// The server reports the deployed frontend version; reload to pick up new HTML, CSS and JS
+function reloadIfFrontendChanged(version) {
+  if (!version || version === document.documentElement.dataset.version) return;
+  if ($('settings').open) return; // do not interrupt; the next ping retries
+
+  try {
+    // Guard against a reload loop if the page keeps arriving with an old version
+    const lastReload = Number(sessionStorage.getItem(RELOAD_KEY)) || 0;
+    if (Date.now() - lastReload < MIN_RELOAD_INTERVAL_MS) return;
+    sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+  } catch (error) {
+    // sessionStorage unavailable; reload anyway
+  }
+  window.location.reload();
+}
+
 // Server-sent events: the server pushes a message whenever the calendar data changes
 function connectUpdates() {
   // A replacement connection may have missed changes, so reload once it opens
@@ -285,7 +304,10 @@ function connectUpdates() {
     if (reconnected) loadEvents();
     reconnected = true;
   });
-  source.addEventListener('ping', () => { state.lastUpdateMessage = Date.now(); });
+  source.addEventListener('ping', (event) => {
+    state.lastUpdateMessage = Date.now();
+    reloadIfFrontendChanged(event.data);
+  });
   source.addEventListener('changed', () => {
     state.lastUpdateMessage = Date.now();
     loadEvents();

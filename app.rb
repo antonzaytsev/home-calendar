@@ -14,6 +14,8 @@ SSE_HEARTBEAT_SECONDS = 15
 MAX_SSE_CLIENTS = 16
 WATCH_INTERVAL_SECONDS = 2
 NO_TITLE = 'Без названия'.freeze
+FRONTEND_FILES = %w[public/calendar.js public/calendar.css views/calendar.erb]
+                 .map { |name| File.join(__dir__, name) }.freeze
 
 LOGGER = Logger.new($stdout, level: Logger::INFO)
 
@@ -238,6 +240,13 @@ NOTIFIER = Notifier.new
 NOTIFIER.watch(EVENTS_PATH)
 
 helpers do
+  # Changes whenever frontend files are deployed; open pages reload when it differs from theirs
+  def frontend_version
+    FRONTEND_FILES.map { |path| File.mtime(path).to_i }.max.to_s
+  rescue SystemCallError
+    nil
+  end
+
   def asset_path(name)
     "/#{name}?v=#{File.mtime(File.join(settings.public_folder, name)).to_i}"
   end
@@ -281,7 +290,7 @@ get '/events' do
   result = STORE.events_between(from, to)
   halt 503, { error: 'Нет данных календаря. Проверьте службу загрузки.' }.to_json unless result
 
-  { events: result[:days], updated_at: STORE.snapshot&.updated_at, **data_status }.to_json
+  { events: result[:days], updated_at: STORE.snapshot&.updated_at, version: frontend_version, **data_status }.to_json
 end
 
 get '/updates' do
@@ -295,10 +304,10 @@ get '/updates' do
     next out << "retry: 60000\n\n" unless queue
 
     begin
-      out << "retry: 5000\n\n"
+      out << "retry: 5000\n\nevent: ping\ndata: #{frontend_version}\n\n"
       loop do
-        version = queue.pop(timeout: SSE_HEARTBEAT_SECONDS)
-        out << (version ? "event: changed\ndata: #{version}\n\n" : "event: ping\ndata: 1\n\n")
+        data_mtime = queue.pop(timeout: SSE_HEARTBEAT_SECONDS)
+        out << (data_mtime ? "event: changed\ndata: #{data_mtime}\n\n" : "event: ping\ndata: #{frontend_version}\n\n")
       end
     rescue StandardError
       # Client disconnected
