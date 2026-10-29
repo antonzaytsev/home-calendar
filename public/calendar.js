@@ -71,11 +71,8 @@ function minutesSinceMidnight(date) {
   return date.getHours() * 60 + date.getMinutes();
 }
 
-// 7 days: the Monday-Sunday week containing the anchor; otherwise start one day before it
 function visibleDates() {
-  const first = state.totalDays === 7
-    ? addDays(state.anchor, -((state.anchor.getDay() + 6) % 7))
-    : addDays(state.anchor, -DAYS_IN_PAST);
+  const first = addDays(state.anchor, -DAYS_IN_PAST);
   return Array.from({ length: state.totalDays }, (_, i) => addDays(first, i));
 }
 
