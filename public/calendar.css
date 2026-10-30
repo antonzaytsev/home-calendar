@@ -52,8 +52,7 @@ button {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
     gap: 8px;
-    min-height: 64px;
-    padding: 10px 16px;
+    padding: 3px 16px;
     border-bottom: 1px solid var(--border);
 }
 
