@@ -99,7 +99,13 @@ function renderTitle(dates) {
   } else {
     title = `${MONTHS[first.getMonth()]} ${first.getFullYear()}`;
   }
-  $('title').textContent = title;
+  $('title').innerHTML = title.replace(/\d{4}/g, '<span class="toolbar-year">$&</span>');
+}
+
+function renderClock() {
+  const time = formatTime(new Date());
+  $('current-time').textContent = time;
+  $('current-time').dateTime = time;
 }
 
 function dayClasses(date) {
@@ -215,6 +221,7 @@ function render() {
   const dates = visibleDates();
   document.documentElement.style.setProperty('--days', dates.length);
   renderTitle(dates);
+  renderClock();
   renderDayHeaders(dates);
   renderAllDayRow(dates);
   renderGrid(dates);
@@ -468,6 +475,7 @@ function init() {
   loadEvents();
   connectUpdates();
   setInterval(tick, TICK_MS);
+  setInterval(renderClock, 1000);
 }
 
 init();

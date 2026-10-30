@@ -49,23 +49,34 @@ button {
 
 .toolbar {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
     gap: 8px;
-    height: 40px;
-    padding: 0 20px;
+    min-height: 64px;
+    padding: 10px 16px;
     border-bottom: 1px solid var(--border);
 }
 
 .toolbar h1 {
-    font-size: 24px;
-    font-weight: 600;
-    white-space: nowrap;
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.15;
+    text-wrap: balance;
+}
+
+.toolbar-year {
+    font-weight: 400;
+}
+
+.toolbar-time {
+    font-size: 28px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
 }
 
 .toolbar-side {
     display: flex;
-    gap: 8px;
+    gap: 6px;
 }
 
 .toolbar-side-end {
@@ -73,24 +84,43 @@ button {
 }
 
 .nav-button {
-    background-color: var(--accent);
+    background-color: var(--border);
     color: #fff;
     border: none;
-    border-radius: 6px;
+    border-radius: 16px;
     padding: 0 12px;
     height: 30px;
     min-width: 40px;
     font-size: 16px;
     font-weight: 500;
+    white-space: nowrap;
     transition: background-color 0.2s;
 }
 
 .nav-button:hover {
-    background-color: var(--accent-hover);
+    background-color: #48484a;
 }
 
 .nav-button:active {
-    background-color: #004aad;
+    background-color: #5a5a5c;
+}
+
+@media (max-width: 760px) {
+    .toolbar {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .toolbar h1 {
+        font-size: 24px;
+    }
+
+    .toolbar-time {
+        font-size: 24px;
+    }
+
+    .toolbar-side-end {
+        grid-column: 1 / -1;
+    }
 }
 
 /* Shared column layout for headers, all-day row and the time grid */
